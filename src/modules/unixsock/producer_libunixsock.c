@@ -1,5 +1,5 @@
 /*
- * producer_libdv.c -- simple libdv test case
+ * producer_libunixsock.c -- simple libunixsock test case
  * Copyright (C) 2003-2004 Ushodaya Enterprises Limited
  * Author: Charles Yates <charles.yates@pandora.be>
  *
@@ -28,7 +28,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
-#include <libdv/dv.h>
+#include <libunixsock/dv.h>
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -118,9 +118,9 @@ void dv_decoder_return( dv_decoder_t *this )
 }
 
 
-typedef struct producer_libdv_s *producer_libdv;
+typedef struct producer_libunixsock_s *producer_libunixsock;
 
-struct producer_libdv_s
+struct producer_libunixsock_s
 {
 	struct mlt_producer_s parent;
 	int fd;
@@ -134,11 +134,11 @@ struct producer_libdv_s
 static int producer_get_frame( mlt_producer parent, mlt_frame_ptr frame, int index );
 static void producer_close( mlt_producer parent );
 
-static int producer_collect_info( producer_libdv this, mlt_profile profile );
+static int producer_collect_info( producer_libunixsock this, mlt_profile profile );
 
-mlt_producer producer_libdv_init( mlt_profile profile, mlt_service_type type, const char *id, char *filename )
+mlt_producer producer_libunixsock_init( mlt_profile profile, mlt_service_type type, const char *id, char *filename )
 {
-	producer_libdv this = calloc( 1, sizeof( struct producer_libdv_s ) );
+	producer_libunixsock this = calloc( 1, sizeof( struct producer_libunixsock_s ) );
 
 	if ( filename != NULL && this != NULL && mlt_producer_init( &this->parent, this ) == 0 )
 	{
@@ -211,7 +211,7 @@ static int read_frame( int fd, uint8_t* frame_buf, int *isPAL )
 	return result;
 }
 
-static int producer_collect_info( producer_libdv this, mlt_profile profile )
+static int producer_collect_info( producer_libunixsock this, mlt_profile profile )
 {
 	int valid = 0;
 
@@ -446,7 +446,7 @@ static int producer_get_audio( mlt_frame this, void **buffer, mlt_audio_format *
 static int producer_get_frame( mlt_producer producer, mlt_frame_ptr frame, int index )
 {
 	// Access the private data
-	producer_libdv this = producer->child;
+	producer_libunixsock this = producer->child;
 
 	// Will carry the frame data
 	uint8_t *data = NULL;
@@ -549,7 +549,7 @@ static int producer_get_frame( mlt_producer producer, mlt_frame_ptr frame, int i
 static void producer_close( mlt_producer parent )
 {
 	// Obtain this
-	producer_libdv this = parent->child;
+	producer_libunixsock this = parent->child;
 
 	// Close the file
 	if ( this->fd > 0 )

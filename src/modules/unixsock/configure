@@ -3,13 +3,13 @@
 if [ "$help" != "1" ]
 then
 
-	pkg-config libdv 2> /dev/null
-	disable_libdv=$?
+	pkg-config libunixsock 2> /dev/null
+	disable_libunixsock=$?
 
-	if [ "$disable_libdv" != "0" ]
+	if [ "$disable_libunixsock" != "0" ]
 	then
-		echo "- libdv not found: disabling"
-		touch ../disable-dv
+		echo "- libunixsock not found: disabling"
+		touch ../disable-unixsock
 		exit 0
 	fi
 

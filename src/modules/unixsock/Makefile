@@ -4,15 +4,15 @@ LDFLAGS += -L../../framework -lmlt -lpthread
 
 include ../../../config.mak
 
-TARGET = ../libmltdv$(LIBSUF)
+TARGET = ../libmltunixsock(LIBSUF)
 
 OBJS = factory.o \
-	   producer_libdv.o \
-	   consumer_libdv.o
+	   producer_libunixsock.o \
+	   consumer_libunixsock.o
 
-CFLAGS += `pkg-config --cflags libdv`
+CFLAGS += `pkg-config --cflags libunixsock`
 
-LDFLAGS += `pkg-config --libs libdv`
+LDFLAGS += `pkg-config --libs libunixsock`
 
 SRCS := $(OBJS:.o=.c)
 
@@ -32,8 +32,8 @@ clean:
 
 install: all
 	install -m 755 $(TARGET) "$(DESTDIR)$(moduledir)"
-	install -d "$(DESTDIR)$(mltdatadir)/dv"
-	install -m 644 *.yml "$(DESTDIR)$(mltdatadir)/dv"
+	install -d "$(DESTDIR)$(mltdatadir)/unixsock"
+	install -m 644 *.yml "$(DESTDIR)$(mltdatadir)/unixsock"
 
 ifneq ($(wildcard .depend),)
 include .depend

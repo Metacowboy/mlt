@@ -1,5 +1,5 @@
 /*
- * consumer_libdv.c -- a DV encoder based on libdv
+ * consumer_libunixsock.c -- a DV encoder based on libunixsock
  * Copyright (C) 2003-2004 Ushodaya Enterprises Limited
  * Author: Charles Yates <charles.yates@pandora.be>
  *
@@ -28,8 +28,8 @@
 #include <string.h>
 #include <pthread.h>
 
-// libdv header files
-#include <libdv/dv.h>
+// libunixsock header files
+#include <libunixsock/dv.h>
 
 #define FRAME_SIZE_525_60 	10 * 150 * 80
 #define FRAME_SIZE_625_50 	12 * 150 * 80
@@ -47,7 +47,7 @@ static void consumer_close( mlt_consumer this );
 /** Initialise the dv consumer.
 */
 
-mlt_consumer consumer_libdv_init( mlt_profile profile, mlt_service_type type, const char *id, char *arg )
+mlt_consumer consumer_libunixsock_init( mlt_profile profile, mlt_service_type type, const char *id, char *arg )
 {
 	// Allocate the consumer
 	mlt_consumer this = calloc( 1, sizeof( struct mlt_consumer_s ) );
@@ -153,10 +153,10 @@ static int consumer_is_stopped( mlt_consumer this )
 	return !mlt_properties_get_int( properties, "running" );
 }
 
-/** Get or create a new libdv encoder.
+/** Get or create a new libunixsock encoder.
 */
 
-static dv_encoder_t *libdv_get_encoder( mlt_consumer this, mlt_frame frame )
+static dv_encoder_t *libunixsock_get_encoder( mlt_consumer this, mlt_frame frame )
 {
 	// Get the properties of the consumer
 	mlt_properties this_properties = MLT_CONSUMER_PROPERTIES( this );
@@ -189,13 +189,13 @@ static dv_encoder_t *libdv_get_encoder( mlt_consumer this, mlt_frame frame )
 }
 
 
-/** The libdv encode video method.
+/** The libunixsock encode video method.
 */
 
 static int consumer_encode_video( mlt_consumer this, uint8_t *dv_frame, mlt_frame frame )
 {
 	// Obtain the dv_encoder
-	dv_encoder_t *encoder = libdv_get_encoder( this, frame );
+    dv_encoder_t *encoder = libunixsock_get_encoder( this, frame );
 
 	// Get the properties of the consumer
 	mlt_properties this_properties = MLT_CONSUMER_PROPERTIES( this );
@@ -252,7 +252,7 @@ static int consumer_encode_video( mlt_consumer this, uint8_t *dv_frame, mlt_fram
 	return size;
 }
 
-/** The libdv encode audio method.
+/** The libunixsock encode audio method.
 */
 
 static void consumer_encode_audio( mlt_consumer this, uint8_t *dv_frame, mlt_frame frame )
@@ -264,7 +264,7 @@ static void consumer_encode_audio( mlt_consumer this, uint8_t *dv_frame, mlt_fra
 	mlt_properties frame_properties = MLT_FRAME_PROPERTIES( frame );
 
 	// Obtain the dv_encoder
-	dv_encoder_t *encoder = libdv_get_encoder( this, frame );
+    dv_encoder_t *encoder = libunixsock_get_encoder( this, frame );
 
 	// Only continue if we have an encoder
 	if ( encoder != NULL )
@@ -327,7 +327,7 @@ static void consumer_encode_audio( mlt_consumer this, uint8_t *dv_frame, mlt_fra
 	}
 }
 
-/** The libdv output method.
+/** The libunixsock output method.
 */
 
 static void consumer_output( mlt_consumer this, uint8_t *dv_frame, int size, mlt_frame frame )
@@ -403,7 +403,7 @@ static void *consumer_thread( void *arg )
 			}
 
 			// Obtain the dv_encoder
-			if ( libdv_get_encoder( this, frame ) != NULL )
+            if ( libunixsock_get_encoder( this, frame ) != NULL )
 			{
 				// Encode the image
 				size = video( this, dv_frame, frame );

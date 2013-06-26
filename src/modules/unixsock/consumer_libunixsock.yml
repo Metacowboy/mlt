@@ -1,17 +1,17 @@
 schema_version: 0.1
 type: consumer
-identifier: libdv
-title: libdv
+identifier: libunixsock
+title: libunixsock
 version: 1
-copyright: Ushodaya Enterprises Limited
-creator: Charles Yates
+copyright: OpCode
+creator: Tomas Neme
 license: LGPLv2.1
 language: en
 tags:
   - Audio
   - Video
 description: >
-   DV consumer using libdv.
+   Unix socket consumer
 parameters:
   - identifier: argument
     title: File

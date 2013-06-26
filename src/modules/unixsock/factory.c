@@ -22,8 +22,8 @@
 #include <limits.h>
 #include <framework/mlt.h>
 
-extern mlt_consumer consumer_libdv_init( mlt_profile profile, mlt_service_type type, const char *id, char *arg );
-extern mlt_producer producer_libdv_init( mlt_profile profile, mlt_service_type type, const char *id, char *arg );
+extern mlt_consumer consumer_libunixsock_init( mlt_profile profile, mlt_service_type type, const char *id, char *arg );
+extern mlt_producer producer_libunixsock_init( mlt_profile profile, mlt_service_type type, const char *id, char *arg );
 
 static mlt_properties metadata( mlt_service_type type, const char *id, void *data )
 {
@@ -34,9 +34,9 @@ static mlt_properties metadata( mlt_service_type type, const char *id, void *dat
 
 MLT_REPOSITORY
 {
-	MLT_REGISTER( consumer_type, "libdv", consumer_libdv_init );
-	MLT_REGISTER( producer_type, "libdv", producer_libdv_init );
+	MLT_REGISTER( consumer_type, "libunixsock", consumer_libunixsock_init );
+	MLT_REGISTER( producer_type, "libunixsock", producer_libunixsock_init );
 
-	MLT_REGISTER_METADATA( consumer_type, "libdv", metadata, "consumer_libdv.yml" );
-	MLT_REGISTER_METADATA( producer_type, "libdv", metadata, "producer_libdv.yml" );
+	MLT_REGISTER_METADATA( consumer_type, "libunixsock", metadata, "consumer_libunixsock.yml" );
+	MLT_REGISTER_METADATA( producer_type, "libunixsock", metadata, "producer_libunixsock.yml" );
 }
