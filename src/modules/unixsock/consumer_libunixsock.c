@@ -191,25 +191,27 @@ static void *consumer_thread( void *arg )
 
   // Frame and size
   mlt_frame frame = NULL;
+
+  // shared memory info
   int size = 0;
+  uint8_t *share = mlt_properties_get_data(properties, "_share", &size);
 
   // Loop while running
-  while( mlt_properties_get_int( properties, "running" ) )
-    {
-      // Get the frame
-      frame = mlt_consumer_rt_frame( this );
+  while( mlt_properties_get_int( properties, "running" ) ) {
+    // Get the frame
+    frame = mlt_consumer_rt_frame( this );
 
-      // Check that we have a frame to work with
-      if ( frame != NULL )
-        {
-          // Terminate on pause
-          if ( top && mlt_properties_get_double( MLT_FRAME_PROPERTIES( frame ), "_speed" ) == 0 )
-            {
-              mlt_frame_close( frame );
-              break;
-            }
-        }
-    }
+    // Check that we have a frame to work with
+    if ( frame != NULL ) {
+        // Terminate on pause
+        if ( top && mlt_properties_get_double( MLT_FRAME_PROPERTIES( frame ), "_speed" ) == 0 ) {
+            mlt_frame_close( frame );
+            break;
+          }
+        //int ( *output )( mlt_consumer, uint8_t *, int, mlt_frame ) = mlt_properties_
+        output( this, share, size, frame );
+      }
+  }
 
   mlt_consumer_stopped( this );
 
