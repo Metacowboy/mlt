@@ -36,7 +36,7 @@
 static int consumer_start( mlt_consumer this );
 static int consumer_stop( mlt_consumer this );
 static int consumer_is_stopped( mlt_consumer this );
-static void consumer_output( mlt_consumer this, uint8_t *dv_frame, int size, mlt_frame frame );
+static void consumer_output( mlt_consumer this, void *share, int size, mlt_frame frame );
 static void *consumer_thread( void *arg );
 static void consumer_close( mlt_consumer this );
 
@@ -100,6 +100,9 @@ static int consumer_start( mlt_consumer this ) {
 
     int memsize = mlt_image_format_size(fmt, width, height, NULL);
     // initialize shared memory
+    memsize = 4 * sizeof(uint32_t); // size, image format, height, width
+    memsize += mlt_image_format_size(fmt, width, height, NULL);
+
     // create shared memory
     int shareId = shm_open(sharedKey, memsize, O_RDWR | O_CREAT);
     void *share = mmap(NULL, memsize, PROT_READ | PROT_WRITE, MAP_SHARED, shareId, 0);
@@ -163,10 +166,29 @@ static int consumer_is_stopped( mlt_consumer this )
 /** The libunixsock output method.
  */
 
-static void consumer_output( mlt_consumer this, uint8_t *share, int size, mlt_frame frame )
-{
+static void consumer_output( mlt_consumer this, void *share, int size, mlt_frame frame ) {
   // Get the properties
   mlt_properties properties = MLT_CONSUMER_PROPERTIES( this );
+
+  mlt_image_format fmt = mlt_properties_get_int(properties, "_format");
+  int width = mlt_properties_get_int(properties, "width");
+  int height = mlt_properties_get_int(properties, "height");
+  uint8_t *image=NULL;
+  mlt_frame_get_image(frame, &image, &fmt, &width, &height, 0);
+  int image_size = mlt_image_format_size(fmt, width, height, NULL);
+
+  void *walk = share;
+
+  uint32_t *header = (uint32_t*) walk;
+
+  header[0] = fmt;
+  header[1] = image_size;
+  header[2] = width;
+  header[3] = height;
+  walk = header + 4;
+  
+  memcpy(walk, image, image_size);
+  walk += image_size;
 
   mlt_frame_close(frame);
 }
@@ -202,14 +224,14 @@ static void *consumer_thread( void *arg )
 
     // Check that we have a frame to work with
     if ( frame != NULL ) {
-        // Terminate on pause
-        if ( top && mlt_properties_get_double( MLT_FRAME_PROPERTIES( frame ), "_speed" ) == 0 ) {
-            mlt_frame_close( frame );
-            break;
-          }
-        //int ( *output )( mlt_consumer, uint8_t *, int, mlt_frame ) = mlt_properties_
-        output( this, share, size, frame );
+      // Terminate on pause
+      if ( top && mlt_properties_get_double( MLT_FRAME_PROPERTIES( frame ), "_speed" ) == 0 ) {
+        mlt_frame_close( frame );
+        break;
       }
+      output( this, share, size, frame );
+      mlt_frame_close(frame);
+    }
   }
 
   mlt_consumer_stopped( this );
