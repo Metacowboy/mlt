@@ -28,7 +28,6 @@
 #include <pthread.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
-#include <semaphore.h>
 #include <fcntl.h>
 #include <unistd.h>
 
@@ -98,19 +97,39 @@ static int consumer_start( mlt_consumer this ) {
       mlt_properties_set_int(properties, "height", height);
     }
 
-    int memsize = mlt_image_format_size(fmt, width, height, NULL);
     // initialize shared memory
-    memsize = 4 * sizeof(uint32_t); // size, image format, height, width
+    char *sharedKey = mlt_properties_get(properties, "target");
+    int memsize = sizeof(pthread_rwlock_t); // access semaphore
+    memsize += 4 * sizeof(uint32_t); // size, image format, height, width
     memsize += mlt_image_format_size(fmt, width, height, NULL);
+
+    /* security concerns: if we want to keep malicious clients from DoS'ing the
+       server via the semaphores, or corrupting videos, we should create both the
+       semaphore and the shared memory patch  with 644 and have server and clients
+       run with different users */
 
     // create shared memory
     int shareId = shm_open(sharedKey, memsize, O_RDWR | O_CREAT);
     void *share = mmap(NULL, memsize, PROT_READ | PROT_WRITE, MAP_SHARED, shareId, 0);
+
+    // create semaphore
+    pthread_rwlockattr_t rwlock_attr;
+    pthread_rwlockattr_init(&rwlock_attr);
+    pthread_rwlockattr_setpshared(&rwlock_attr, PTHREAD_PROCESS_SHARED);
+    pthread_rwlock_init(share, &rwlock_attr);
+    pthread_rwlock_t *rwlock = (pthread_rwlock_t*)share;
+
     close(shareId);
 
+    // all the shared memory space
+    mlt_properties_set_data(properties, "_share", share, memsize, NULL, NULL);
     mlt_properties_set_int(properties, "_shareSize", memsize);
     mlt_properties_set(properties, "_sharedKey", sharedKey);
-    mlt_properties_set_data(properties, "_share", share, memsize, NULL, NULL);
+    // the rwlock at the beginning of _share
+    mlt_properties_set_data(properties, "_rwlock", rwlock, sizeof(pthread_rwlock_t), NULL, NULL);
+    // the writespace for each frame, after rwlock
+    mlt_properties_set_data(properties, "_writespace", share + sizeof(pthread_rwlock_t),
+                            memsize - sizeof(pthread_rwlock_t), NULL, NULL);
     mlt_properties_set_int(properties, "_format", fmt);
 
     // Allocate a thread
@@ -172,9 +191,12 @@ static void consumer_output( mlt_consumer this, void *share, int size, mlt_frame
   mlt_image_format fmt = mlt_properties_get_int(properties, "_format");
   int width = mlt_properties_get_int(properties, "width");
   int height = mlt_properties_get_int(properties, "height");
+  pthread_rwlock_t *rwlock = mlt_properties_get_data(properties, "_rwlock", NULL);
   uint8_t *image=NULL;
   mlt_frame_get_image(frame, &image, &fmt, &width, &height, 0);
   int image_size = mlt_image_format_size(fmt, width, height, NULL);
+
+  pthread_rwlock_wrlock(rwlock);
 
   void *walk = share;
 
@@ -189,6 +211,7 @@ static void consumer_output( mlt_consumer this, void *share, int size, mlt_frame
   memcpy(walk, image, image_size);
   walk += image_size;
 
+  pthread_rwlock_unlock(rwlock);
   mlt_frame_close(frame);
 }
 
@@ -213,7 +236,7 @@ static void *consumer_thread( void *arg ) {
 
   // shared memory info
   int size = 0;
-  uint8_t *share = mlt_properties_get_data(properties, "_share", &size);
+  uint8_t *share = mlt_properties_get_data(properties, "_writespace", &size);
 
   // Loop while running
   while( mlt_properties_get_int( properties, "running" ) ) {
