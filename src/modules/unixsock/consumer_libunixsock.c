@@ -146,10 +146,6 @@ static int consumer_stop( mlt_consumer this )
 
       // Wait for termination
       pthread_join( *thread, NULL );
-
-      // Close the output file :-) - this is obtuse - doesn't matter if output file
-      // exists or not - the destructor will kick in if it does
-      mlt_properties_set_data( properties, "output_file", NULL, 0, NULL, NULL );
     }
 
   return 0;
@@ -168,34 +164,12 @@ static int consumer_is_stopped( mlt_consumer this )
 /** The libunixsock output method.
  */
 
-static void consumer_output( mlt_consumer this, uint8_t *dv_frame, int size, mlt_frame frame )
+static void consumer_output( mlt_consumer this, uint8_t *share, int size, mlt_frame frame )
 {
   // Get the properties
   mlt_properties properties = MLT_CONSUMER_PROPERTIES( this );
 
-  FILE *output = stdout;
-  char *target = mlt_properties_get( properties, "target" );
-
-  if ( target != NULL )
-    {
-      output = mlt_properties_get_data( properties, "output_file", NULL );
-      if ( output == NULL )
-        {
-          output = fopen( target, "w" );
-          if ( output != NULL )
-            mlt_properties_set_data( properties, "output_file", output, 0, ( mlt_destructor )fclose, 0 );
-        }
-    }
-
-  if ( output != NULL )
-    {
-      fwrite( dv_frame, size, 1, output );
-      fflush( output );
-    }
-  else
-    {
-      fprintf( stderr, "Unable to open %s\n", target );
-    }
+  mlt_frame_close(frame);
 }
 
 /** The main thread - the argument is simply the consumer.
@@ -214,9 +188,6 @@ static void *consumer_thread( void *arg )
 
   // Get the handling methods
   int ( *output )( mlt_consumer, uint8_t *, int, mlt_frame ) = mlt_properties_get_data( properties, "output", NULL );
-
-  // Allocate a single PAL frame for encoding
-  uint8_t *dv_frame = mlt_pool_alloc( 0 );
 
   // Frame and size
   mlt_frame frame = NULL;
@@ -239,9 +210,6 @@ static void *consumer_thread( void *arg )
             }
         }
     }
-
-  // Tidy up
-  mlt_pool_release( dv_frame );
 
   mlt_consumer_stopped( this );
 
