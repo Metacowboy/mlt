@@ -26,7 +26,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <pthread.h>
-#include <sys/shm.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <semaphore.h>
 #include <fcntl.h>
 #include <unistd.h>
 
@@ -58,7 +60,7 @@ mlt_consumer consumer_libunixsock_init( mlt_profile profile, mlt_service_type ty
     if ( arg != NULL )
       mlt_properties_set( properties, "target", arg );
     else
-      mlt_properties_set( properties, "target", "/tmp/unixsock.mlt" );
+      mlt_properties_set( properties, "target", "/unixsock.mlt" );
 
     // Set the output handling method
     mlt_properties_set_data( properties, "output", consumer_output, 0, NULL, NULL );
@@ -98,18 +100,15 @@ static int consumer_start( mlt_consumer this ) {
 
     int memsize = mlt_image_format_size(fmt, width, height, NULL);
     // initialize shared memory
-    char *keyfile = mlt_properties_get(properties, "target");
-    // make sure the keyfile exists
-    int desc = open(keyfile, O_CREAT | O_RDWR, S_IRWXU);
-    close(desc);
-    // get shared memory unique key number
-    key_t sharedKey = ftok(keyfile, 1);
-    int shareId = shmget(sharedKey, memsize, IPC_CREAT | S_IRUSR | S_IWUSR);
-    void *share = shmat(shareId, NULL, 0);
+    // create shared memory
+    int shareId = shm_open(sharedKey, memsize, O_RDWR | O_CREAT);
+    void *share = mmap(NULL, memsize, PROT_READ | PROT_WRITE, MAP_SHARED, shareId, 0);
+    close(shareId);
+
     mlt_properties_set_int(properties, "_shareSize", memsize);
-    mlt_properties_set_int(properties, "_sharedKey", sharedKey);
-    mlt_properties_set_int(properties, "_shareId", shareId);
+    mlt_properties_set(properties, "_sharedKey", sharedKey);
     mlt_properties_set_data(properties, "_share", share, memsize, NULL, NULL);
+    mlt_properties_set_int(properties, "_format", fmt);
 
     // Allocate a thread
     pthread_t *thread = calloc( 1, sizeof( pthread_t ) );
