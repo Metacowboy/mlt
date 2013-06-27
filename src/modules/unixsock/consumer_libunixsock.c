@@ -156,8 +156,7 @@ static int consumer_stop( mlt_consumer this )
 /** Determine if the consumer is stopped.
  */
 
-static int consumer_is_stopped( mlt_consumer this )
-{
+static int consumer_is_stopped( mlt_consumer this ) {
   // Get the properties
   mlt_properties properties = MLT_CONSUMER_PROPERTIES( this );
   return !mlt_properties_get_int( properties, "running" );
@@ -196,8 +195,7 @@ static void consumer_output( mlt_consumer this, void *share, int size, mlt_frame
 /** The main thread - the argument is simply the consumer.
  */
 
-static void *consumer_thread( void *arg )
-{
+static void *consumer_thread( void *arg ) {
   // Map the argument to the object
   mlt_consumer this = arg;
 
@@ -244,9 +242,10 @@ static void *consumer_thread( void *arg )
 
 static void consumer_close( mlt_consumer this )
 {
+
   // Stop the consumer
   mlt_consumer_stop( this );
-
+  
   // Close the parent
   mlt_consumer_close( this );
 
