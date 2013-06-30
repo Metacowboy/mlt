@@ -22,21 +22,21 @@
 #include <limits.h>
 #include <framework/mlt.h>
 
-extern mlt_consumer consumer_libunixsock_init( mlt_profile profile, mlt_service_type type, const char *id, char *arg );
-extern mlt_producer producer_libunixsock_init( mlt_profile profile, mlt_service_type type, const char *id, char *arg );
+extern mlt_consumer consumer_posixshm_init( mlt_profile profile, mlt_service_type type, const char *id, char *arg );
+extern mlt_producer producer_posixshm_init( mlt_profile profile, mlt_service_type type, const char *id, char *arg );
 
 static mlt_properties metadata( mlt_service_type type, const char *id, void *data )
 {
 	char file[ PATH_MAX ];
-	snprintf( file, PATH_MAX, "%s/dv/%s", mlt_environment( "MLT_DATA" ), (char*) data );
+	snprintf( file, PATH_MAX, "%s/unixsock/%s", mlt_environment( "MLT_DATA" ), (char*) data );
 	return mlt_properties_parse_yaml( file );
 }
 
 MLT_REPOSITORY
 {
-	MLT_REGISTER( consumer_type, "libunixsock", consumer_libunixsock_init );
-	MLT_REGISTER( producer_type, "libunixsock", producer_libunixsock_init );
+	MLT_REGISTER( consumer_type, "posixshm", consumer_posixshm_init );
+        MLT_REGISTER( producer_type, "posixshm", producer_posixshm_init );
 
-	MLT_REGISTER_METADATA( consumer_type, "libunixsock", metadata, "consumer_libunixsock.yml" );
-	MLT_REGISTER_METADATA( producer_type, "libunixsock", metadata, "producer_libunixsock.yml" );
+	MLT_REGISTER_METADATA( consumer_type, "posixshm", metadata, "consumer_posixshm.yml" );
+        MLT_REGISTER_METADATA( producer_type, "posixshm", metadata, "producer_posixshm.yml" );
 }

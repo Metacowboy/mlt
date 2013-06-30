@@ -4,15 +4,11 @@ LDFLAGS += -L../../framework -lmlt -lrt -lpthread
 
 include ../../../config.mak
 
-TARGET = ../libmltunixsock(LIBSUF)
+TARGET = ../libmltposixshm$(LIBSUF)
 
 OBJS = factory.o \
-	   producer_libunixsock.o \
-	   consumer_libunixsock.o
-
-CFLAGS += `pkg-config --cflags libunixsock`
-
-LDFLAGS += `pkg-config --libs libunixsock`
+	   producer_posixshm.o \
+	   consumer_posixshm.o
 
 SRCS := $(OBJS:.o=.c)
 
@@ -32,8 +28,8 @@ clean:
 
 install: all
 	install -m 755 $(TARGET) "$(DESTDIR)$(moduledir)"
-	install -d "$(DESTDIR)$(mltdatadir)/unixsock"
-	install -m 644 *.yml "$(DESTDIR)$(mltdatadir)/unixsock"
+	install -d "$(DESTDIR)$(mltdatadir)/posixshm"
+	install -m 644 *.yml "$(DESTDIR)$(mltdatadir)/posixshm"
 
 ifneq ($(wildcard .depend),)
 include .depend

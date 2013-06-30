@@ -1,7 +1,6 @@
 /*
- * consumer_libunixsock.c -- a DV encoder based on libunixsock
- * Copyright (C) 2003-2004 Ushodaya Enterprises Limited
- * Author: Charles Yates <charles.yates@pandora.be>
+ * consumer_posixshm.c -- a melted consumer that copies
+ * frame data onto POSIX shared memory
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -39,10 +38,10 @@ static void consumer_output( mlt_consumer this, void *share, int size, mlt_frame
 static void *consumer_thread( void *arg );
 static void consumer_close( mlt_consumer this );
 
-/** Initialise the unixsock consumer.
+/** Initialise the posixshm consumer.
  */
 
-mlt_consumer consumer_libunixsock_init( mlt_profile profile, mlt_service_type type, const char *id, char *arg ) {
+mlt_consumer consumer_posixshm_init( mlt_profile profile, mlt_service_type type, const char *id, char *arg ) {
   // Allocate the consumer
   mlt_consumer this = mlt_consumer_new(profile);
 
@@ -59,7 +58,7 @@ mlt_consumer consumer_libunixsock_init( mlt_profile profile, mlt_service_type ty
     if ( arg != NULL )
       mlt_properties_set( properties, "target", arg );
     else
-      mlt_properties_set( properties, "target", "/unixsock.mlt" );
+      mlt_properties_set( properties, "target", "/posixshm_share.mlt" );
 
     // Set the output handling method
     mlt_properties_set_data( properties, "output", consumer_output, 0, NULL, NULL );
@@ -181,7 +180,7 @@ static int consumer_is_stopped( mlt_consumer this ) {
   return !mlt_properties_get_int( properties, "running" );
 }
 
-/** The libunixsock output method.
+/** The posixshm output method.
  */
 
 static void consumer_output( mlt_consumer this, void *share, int size, mlt_frame frame ) {
