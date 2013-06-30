@@ -203,8 +203,8 @@ static void consumer_output( mlt_consumer this, void *share, int size, mlt_frame
 
   uint32_t *header = (uint32_t*) walk;
 
-  header[0] = fmt;
-  header[1] = image_size;
+  header[0] = image_size;
+  header[1] = fmt;
   header[2] = width;
   header[3] = height;
   walk = header + 4;
@@ -213,7 +213,6 @@ static void consumer_output( mlt_consumer this, void *share, int size, mlt_frame
   walk += image_size;
 
   pthread_rwlock_unlock(rwlock);
-  mlt_frame_close(frame);
 }
 
 /** The main thread - the argument is simply the consumer.
