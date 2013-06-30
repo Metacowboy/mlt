@@ -271,7 +271,4 @@ static void consumer_close( mlt_consumer this )
   
   // Close the parent
   mlt_consumer_close( this );
-
-  // Free the memory
-  free( this );
 }
