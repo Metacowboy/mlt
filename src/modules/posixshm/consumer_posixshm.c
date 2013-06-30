@@ -70,21 +70,8 @@ mlt_consumer consumer_posixshm_init( mlt_profile profile, mlt_service_type type,
     this->start = consumer_start;
     this->stop = consumer_stop;
     this->is_stopped = consumer_is_stopped;
-  }
 
-  // Return this
-  return this;
-}
-
-/** Start the consumer.
- */
-
-static int consumer_start( mlt_consumer this ) {
-  // Get the properties
-  mlt_properties properties = MLT_CONSUMER_PROPERTIES( this );
-
-  // Check that we're not already running
-  if ( !mlt_properties_get_int( properties, "running" ) ) {
+    // set up the shared memory
     mlt_image_format fmt = mlt_image_yuv422;
     int width = mlt_properties_get_int( properties, "width");
     int height = mlt_properties_get_int( properties, "height");
@@ -108,7 +95,8 @@ static int consumer_start( mlt_consumer this ) {
        run with different users */
 
     // create shared memory
-    int shareId = shm_open(sharedKey, memsize, O_RDWR | O_CREAT);
+    int shareId = shm_open(sharedKey, O_RDWR | O_CREAT, 0666);
+    ftruncate(shareId, memsize);
     void *share = mmap(NULL, memsize, PROT_READ | PROT_WRITE, MAP_SHARED, shareId, 0);
 
     // create semaphore
@@ -130,7 +118,21 @@ static int consumer_start( mlt_consumer this ) {
     mlt_properties_set_data(properties, "_writespace", share + sizeof(pthread_rwlock_t),
                             memsize - sizeof(pthread_rwlock_t), NULL, NULL);
     mlt_properties_set_int(properties, "_format", fmt);
+  }
 
+  // Return this
+  return this;
+}
+
+/** Start the consumer.
+ */
+
+static int consumer_start( mlt_consumer this ) {
+  // Get the properties
+  mlt_properties properties = MLT_CONSUMER_PROPERTIES( this );
+
+  // Check that we're not already running
+  if ( !mlt_properties_get_int( properties, "running" ) ) {
     // Allocate a thread
     pthread_t *thread = calloc( 1, sizeof( pthread_t ) );
 
