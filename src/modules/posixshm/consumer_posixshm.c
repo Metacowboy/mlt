@@ -89,6 +89,7 @@ mlt_consumer consumer_posixshm_init( mlt_profile profile, mlt_service_type type,
     char *sharedKey = mlt_properties_get(properties, "target");
     int memsize = sizeof(pthread_rwlock_t); // access semaphore
     memsize += 4 * sizeof(uint32_t); // size, image format, height, width
+    memsize += sizeof(uint32_t); // frame number
     memsize += mlt_image_format_size(fmt, width, height, NULL);
 
     /* security concerns: if we want to keep malicious clients from DoS'ing the
@@ -194,6 +195,7 @@ static void consumer_output( mlt_consumer this, void *share, int size, mlt_frame
   mlt_image_format fmt = mlt_properties_get_int(properties, "_format");
   int width = mlt_properties_get_int(properties, "width");
   int height = mlt_properties_get_int(properties, "height");
+  int32_t frameno = mlt_consumer_position(this);
   pthread_rwlock_t *rwlock = mlt_properties_get_data(properties, "_rwlock", NULL);
   uint8_t *image=NULL;
   mlt_frame_get_image(frame, &image, &fmt, &width, &height, 0);
@@ -209,7 +211,8 @@ static void consumer_output( mlt_consumer this, void *share, int size, mlt_frame
   header[1] = fmt;
   header[2] = width;
   header[3] = height;
-  walk = header + 4;
+  header[4] = frameno;
+  walk = header + 5;
   
   memcpy(walk, image, image_size);
   walk += image_size;
