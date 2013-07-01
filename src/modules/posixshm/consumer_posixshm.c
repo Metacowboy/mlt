@@ -253,6 +253,7 @@ static void *consumer_thread( void *arg ) {
         break;
       }
       output( this, share, size, frame );
+      mlt_events_fire( properties, "consumer-frame-show", frame, NULL );
       mlt_frame_close(frame);
     }
     struct timespec endtime;
