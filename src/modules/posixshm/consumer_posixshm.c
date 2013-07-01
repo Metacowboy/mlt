@@ -237,9 +237,11 @@ static void *consumer_thread( void *arg ) {
   // shared memory info
   int size = 0;
   uint8_t *share = mlt_properties_get_data(properties, "_writespace", &size);
+  struct timespec sleeptime;
 
   // Loop while running
   while( mlt_properties_get_int( properties, "running" ) ) {
+    clock_gettime(CLOCK_REALTIME, &sleeptime);
     // Get the frame
     frame = mlt_consumer_rt_frame( this );
 
@@ -253,6 +255,12 @@ static void *consumer_thread( void *arg ) {
       output( this, share, size, frame );
       mlt_frame_close(frame);
     }
+    struct timespec endtime;
+    clock_gettime(CLOCK_REALTIME, &endtime);
+    long int elapsed = 1000000000 * (endtime.tv_sec - sleeptime.tv_sec) + (endtime.tv_nsec - sleeptime.tv_nsec);
+    sleeptime.tv_sec = elapsed / 1000000000;
+    sleeptime.tv_nsec = 40000000;
+    clock_nanosleep(CLOCK_REALTIME, 0, &sleeptime, NULL);
   }
 
   mlt_consumer_stopped( this );
