@@ -41,9 +41,6 @@ mlt_producer producer_posixshm_init( mlt_profile profile, mlt_service_type type,
     int destroy = 0;
     mlt_properties properties = MLT_PRODUCER_PROPERTIES( this );
 
-    // Set the resource property (required for all producers)
-    mlt_properties_set( properties, "resource", source );
-
     // Register transport implementation with the producer
     this->close = ( mlt_destructor )producer_close;
 
@@ -54,13 +51,14 @@ mlt_producer producer_posixshm_init( mlt_profile profile, mlt_service_type type,
 
     mlt_properties_set_int( properties, "locked", 0 );
 
+    // Set the resource property (required for all producers)
     if(source)
-      mlt_properties_set(properties, "source", source);
+      mlt_properties_set(properties, "resource", source);
     else
-      mlt_properties_set(properties, "source", "/posixshm_share.mlt");
+      mlt_properties_set(properties, "resource", "/posixshm_share.mlt");
 
     // open shared memory
-    char *sharedKey = mlt_properties_get(properties, "source");
+    char *sharedKey = mlt_properties_get(properties, "resource");
     int shareId = shm_open(sharedKey, O_RDWR, 0666);
     struct stat filestat;
     fstat(shareId, &filestat);
@@ -104,8 +102,9 @@ static int producer_get_image( mlt_frame this, uint8_t **buffer, mlt_image_forma
   // Get the frames properties
   mlt_properties properties = MLT_FRAME_PROPERTIES( this );
 
-  pthread_rwlock_t *rwlock = mlt_frame_pop_service(this);
   void *readspace = mlt_frame_pop_service(this);
+  pthread_rwlock_t *rwlock = mlt_frame_pop_service(this);
+
 
   uint32_t *header = readspace;
   void *data = readspace + sizeof(uint32_t[4]);
