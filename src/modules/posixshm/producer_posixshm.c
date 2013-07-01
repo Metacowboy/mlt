@@ -189,8 +189,8 @@ static void producer_read_frame_data(mlt_producer this, mlt_frame_ptr frame) {
 
   int last_frame = mlt_properties_get_int(properties, "_last_frame");
 
-  void *readspace = mlt_properties_get_data(this, "_readspace", NULL);
-  pthread_rwlock_t *rwlock = mlt_properties_get_data(this, "_rwlock", NULL);
+  void *readspace = mlt_properties_get_data(properties, "_readspace", NULL);
+  pthread_rwlock_t *rwlock = mlt_properties_get_data(properties, "_rwlock", NULL);
 
   uint32_t *header = readspace;
   void *data = readspace + sizeof(uint32_t[5]);
