@@ -84,6 +84,9 @@ mlt_producer producer_posixshm_init( mlt_profile profile, mlt_service_type type,
     // frame readspace
     mlt_properties_set_data(properties, "_readspace", readspace,read_size , NULL, NULL);
 
+    // last read frame
+    mlt_properties_set_int(properties, "_last_frame", -1);
+
     // If we couldn't open the file, then destroy it now
     if ( destroy ) {
       mlt_producer_close(this);
@@ -105,6 +108,7 @@ static int producer_get_image( mlt_frame this, uint8_t **buffer, mlt_image_forma
   void *readspace = mlt_frame_pop_service(this);
   pthread_rwlock_t *rwlock = mlt_frame_pop_service(this);
 
+  pthread_rwlock_rdlock(rwlock);
 
   uint32_t *header = readspace;
   void *data = readspace + sizeof(uint32_t[4]);
@@ -193,19 +197,45 @@ static int producer_get_audio( mlt_frame this, void **buffer, mlt_audio_format *
   return 0;
 }
 */
+
+static void producer_read_frame_data(mlt_producer this, mlt_frame_ptr frame) {
+  // get the producer properties
+  mlt_properties properties = MLT_PRODUCER_PROPERTIES(this);
+  // Get the frames properties
+  mlt_properties frame_procs = MLT_FRAME_PROPERTIES(*frame);
+
+  int last_frame = mlt_properties_get_int(properties, "_last_frame");
+
+  void *readspace = mlt_properties_get_data(this, "_readspace", NULL);
+  pthread_rwlock_t *rwlock = mlt_properties_get_data(this, "_rwlock", NULL);
+
+  uint32_t *header = readspace;
+  void *data = readspace + sizeof(uint32_t[5]);
+
+  pthread_rwlock_rdlock(rwlock);
+
+  int cur_frame = header[4];
+
+  while( cur_frame <= last_frame ) {
+    pthread_rwlock_unlock(rwlock);
+    pthread_rwlock_rdlock(rwlock);
+    cur_frame = header[4];
+  }
+  printf("found frame\n");
+
+  // release read image lock
+  pthread_rwlock_unlock(rwlock);
+}
+
 static int producer_get_frame( mlt_producer producer, mlt_frame_ptr frame, int index )
 {
   mlt_properties proc_properties = MLT_PRODUCER_PROPERTIES(producer);
-  // lock
-  pthread_rwlock_t *rwlock = (pthread_rwlock_t*)mlt_properties_get_data(proc_properties, "_rwlock", NULL);
-  void *readspace = mlt_properties_get_data(proc_properties, "_readspace", NULL);
-  uint32_t *header = readspace;
+
+  void *readspace = mlt_properties_get_data(producer, "_readspace", NULL);
+  pthread_rwlock_t *rwlock = mlt_properties_get_data(producer, "_rwlock", NULL);
 
   // Create an empty frame
   *frame = mlt_frame_init( MLT_PRODUCER_SERVICE( producer ) );
-
-  // wait until I can read
-  pthread_rwlock_rdlock(rwlock);
 
   // Get the frames properties
   mlt_properties properties = MLT_FRAME_PROPERTIES( *frame );
@@ -214,20 +244,19 @@ static int producer_get_frame( mlt_producer producer, mlt_frame_ptr frame, int i
   //mlt_properties_set_int( properties, "test_audio", 0 );
 
   // Update other info on the frame
-  int width = header[2],
-    height = header[3];
-  mlt_properties_set_int( properties, "width", width);
-  mlt_properties_set_int( properties, "height", height);
   // TODO: ??????
   mlt_properties_set_int( properties, "colorspace", 601 );
 
   //mlt_properties_set_int( properties, "progressive", dv_is_progressive( dv_decoder ) );
-  mlt_properties_set_double(properties, "aspect_ratio", (double)width / (double)height);
+  //mlt_properties_set_double(properties, "aspect_ratio", (double)width / (double)height);
 
-  // push the lock
+  producer_read_frame_data(producer, frame);
+
+  // Push the get_image method on to the stack
+  // we get a second lock for get_image which will be released there
   mlt_frame_push_service(*frame, rwlock);
-  // and the share
   mlt_frame_push_service(*frame, readspace);
+  mlt_frame_push_get_image( *frame, producer_get_image );
 
   /* audio stuff */
   /*
@@ -237,15 +266,9 @@ static int producer_get_frame( mlt_producer producer, mlt_frame_ptr frame, int i
   // Register audio callback
   if ( mlt_properties_get_int( MLT_PRODUCER_PROPERTIES( producer ), "audio_index" ) > 0 ) {
     // we get a second lock for get_audio which will be released there
-    pthread_rwlock_rdlock(rwlock);
     mlt_frame_push_audio( *frame, producer_get_audio );
   }
   */
-
-  // Push the get_image method on to the stack
-  // we get a second lock for get_image which will be released there
-  pthread_rwlock_rdlock(rwlock);
-  mlt_frame_push_get_image( *frame, producer_get_image );
 
   // Update timecode on the frame we're creating
   if ( *frame != NULL )
@@ -253,7 +276,6 @@ static int producer_get_frame( mlt_producer producer, mlt_frame_ptr frame, int i
 
   // Calculate the next timecode
   mlt_producer_prepare_next( producer );
-
   return 0;
 }
 
