@@ -66,6 +66,8 @@ mlt_consumer consumer_posixshm_init( mlt_profile profile, mlt_service_type type,
     // Terminate at end of the stream by default
     mlt_properties_set_int( properties, "terminate_on_pause", 0 );
 
+    mlt_properties_set_double(properties, "_fps", mlt_profile_fps(profile));
+
     // Set up start/stop/terminated callbacks
     this->start = consumer_start;
     this->stop = consumer_stop;
@@ -237,6 +239,7 @@ static void *consumer_thread( void *arg ) {
   // shared memory info
   int size = 0;
   uint8_t *share = mlt_properties_get_data(properties, "_writespace", &size);
+  double fps = mlt_properties_get_double(properties, "_fps");
   struct timespec sleeptime;
 
   // Loop while running
@@ -259,8 +262,8 @@ static void *consumer_thread( void *arg ) {
     struct timespec endtime;
     clock_gettime(CLOCK_REALTIME, &endtime);
     long int elapsed = 1000000000 * (endtime.tv_sec - sleeptime.tv_sec) + (endtime.tv_nsec - sleeptime.tv_nsec);
-    sleeptime.tv_sec = elapsed / 1000000000;
-    sleeptime.tv_nsec = 40000000;
+    sleeptime.tv_sec = 0;
+    sleeptime.tv_nsec = (1. / fps) * 1000000000 - elapsed;
     clock_nanosleep(CLOCK_REALTIME, 0, &sleeptime, NULL);
   }
 
