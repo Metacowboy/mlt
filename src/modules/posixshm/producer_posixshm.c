@@ -109,77 +109,30 @@ static int producer_get_image( mlt_frame this, uint8_t **buffer, mlt_image_forma
   *width = mlt_properties_get_int(properties, "width");
   *height = mlt_properties_get_int(properties, "height");
 
-  *buffer = mlt_properties_get_data(properties, "_data", &image_size);
-  mlt_properties_set_data(properties, "_data", NULL, 0, NULL, NULL);
+  *buffer = mlt_properties_get_data(properties, "_video_data", &image_size);
+  mlt_properties_set_data(properties, "_video_data", NULL, 0, NULL, NULL);
   mlt_frame_set_image(this, *buffer, image_size, mlt_pool_release);
 
   return 0;
 }
-/*
+
 static int producer_get_audio( mlt_frame this, void **buffer, mlt_audio_format *format, int *frequency, int *channels, int *samples )
 {
-  int16_t *p;
-  int i, j;
-  int16_t *audio_channels[ 4 ];
+  mlt_properties properties = MLT_FRAME_PROPERTIES(this);
 
-  // Get the frames properties
-  mlt_properties properties = MLT_FRAME_PROPERTIES( this );
+  *format = mlt_properties_get_int(properties, "audio_format");
+  *frequency = mlt_properties_get_int(properties, "audio_frequency");
+  *channels = mlt_properties_get_int(properties, "audio_channels");
+  *samples = mlt_properties_get_int(properties, "audio_samples");
 
-  // Get a dv_decoder
-  dv_decoder_t *decoder = dv_decoder_alloc( );
-
-  // Get the dv data
-  uint8_t *dv_data = mlt_properties_get_data( properties, "dv_data", NULL );
-
-  // Parse the header for meta info
-  dv_parse_header( decoder, dv_data );
-
-  // Check that we have audio
-  if ( decoder->audio->num_channels > 0 )
-    {
-      int size = *channels * DV_AUDIO_MAX_SAMPLES * sizeof( int16_t );
-
-      // Obtain required values
-      *frequency = decoder->audio->frequency;
-      *samples = decoder->audio->samples_this_frame;
-      *channels = decoder->audio->num_channels;
-      *format = mlt_audio_s16;
-
-      // Create a temporary workspace
-      for ( i = 0; i < 4; i++ )
-        audio_channels[ i ] = mlt_pool_alloc( DV_AUDIO_MAX_SAMPLES * sizeof( int16_t ) );
-
-      // Create a workspace for the result
-      *buffer = mlt_pool_alloc( size );
-
-      // Pass the allocated audio buffer as a property
-      mlt_frame_set_audio( this, *buffer, *format, size, mlt_pool_release );
-
-      // Decode the audio
-      dv_decode_full_audio( decoder, dv_data, audio_channels );
-
-      // Interleave the audio
-      p = *buffer;
-      for ( i = 0; i < *samples; i++ )
-        for ( j = 0; j < *channels; j++ )
-          *p++ = audio_channels[ j ][ i ];
-
-      // Free the temporary work space
-      for ( i = 0; i < 4; i++ )
-        mlt_pool_release( audio_channels[ i ] );
-    }
-  else
-    {
-      // No audio available on the frame, so get test audio (silence)
-      mlt_frame_get_audio( this, buffer, format, frequency, channels, samples );
-    }
-
-  // Return the decoder
-  dv_decoder_return( decoder );
-
+  int size;
+  *buffer = mlt_properties_get_data(properties, "_audio_data", &size);
+  mlt_properties_set_data(properties, "_audio_data", NULL, 0, NULL, NULL);
+  mlt_frame_set_audio(this, *buffer, *format, size, mlt_pool_release);
+  
   return 0;
 }
-*/
+
 
 static void producer_read_frame_data(mlt_producer this, mlt_frame_ptr frame) {
   // get the producer properties
@@ -197,24 +150,43 @@ static void producer_read_frame_data(mlt_producer this, mlt_frame_ptr frame) {
 
   pthread_rwlock_rdlock(rwlock);
 
-  int cur_frame = header[4];
-
+  int cur_frame = header[0];
+  /*
   while( cur_frame <= last_frame ) {
     pthread_rwlock_unlock(rwlock);
     pthread_rwlock_rdlock(rwlock);
-    cur_frame = header[4];
+    cur_frame = header[0];
   }
-
-  int size = header[0];
-  int width = header[2];
-  int height = header[3];
+  
+  printf("found frame %d\n", cur_frame);
+  */
+  int image_size = header[1];
+  int width = header[3];
+  int height = header[4];
 
   mlt_properties_set_int(frame_procs, "width", width);
   mlt_properties_set_int(frame_procs, "height", height);
 
-  void *buffer = mlt_pool_alloc(size);
-  memcpy(buffer, data, size);
-  mlt_properties_set_data(frame_procs, "_data", buffer, size, mlt_pool_release, NULL);
+  void *buffer = mlt_pool_alloc(image_size);
+  memcpy(buffer, data, image_size);
+  mlt_properties_set_data(frame_procs, "_video_data", buffer, image_size, mlt_pool_release, NULL);
+
+  header = data + image_size;
+  int audio_size = header[0];
+  int afmt = header[1];
+  int frequency = header[2];
+  int channels = header[3];
+  int samples = header[4];
+
+  mlt_properties_set_int(frame_procs, "audio_format", afmt);
+  mlt_properties_set_int(frame_procs, "audio_frequency", frequency);
+  mlt_properties_set_int(frame_procs, "audio_channels", channels);
+  mlt_properties_set_int(frame_procs, "audio_samples", samples);
+
+  data = header + 5;
+  buffer = mlt_pool_alloc(audio_size);
+  memcpy(buffer, data, audio_size);
+  mlt_properties_set_data(frame_procs, "_audio_data", buffer, audio_size, mlt_pool_release, NULL);
 
   // release read image lock
   pthread_rwlock_unlock(rwlock);
@@ -240,21 +212,11 @@ static int producer_get_frame( mlt_producer producer, mlt_frame_ptr frame, int i
 
   producer_read_frame_data(producer, frame);
 
-  // Push the get_image method on to the stack
-  // we get a second lock for get_image which will be released there
+  // Push the get_image method onto the stack
   mlt_frame_push_get_image( *frame, producer_get_image );
 
-  /* audio stuff */
-  /*
-  mlt_properties_set_int( properties, "audio_frequency", dv_decoder->audio->frequency );
-  mlt_properties_set_int( properties, "audio_channels", dv_decoder->audio->num_channels );
-
-  // Register audio callback
-  if ( mlt_properties_get_int( MLT_PRODUCER_PROPERTIES( producer ), "audio_index" ) > 0 ) {
-    // we get a second lock for get_audio which will be released there
-    mlt_frame_push_audio( *frame, producer_get_audio );
-  }
-  */
+  // Push the get_audio method onto the stack
+  mlt_frame_push_audio( *frame, producer_get_audio );
 
   // Update timecode on the frame we're creating
   if ( *frame != NULL )
