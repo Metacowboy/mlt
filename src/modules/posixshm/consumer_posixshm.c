@@ -115,7 +115,7 @@ static int consumer_start( mlt_consumer this ) {
     // initialize shared memory
     char *sharedKey = mlt_properties_get(properties, "target");
     int memsize = sizeof(pthread_rwlock_t); // access semaphore
-    memsize += sizeof(uint32_t); // frame number
+    memsize += 3 * sizeof(uint32_t); // frame number, frame rate num/den
     memsize += 4 * sizeof(uint32_t); // size, image format, height, width
     memsize += mlt_image_format_size(ifmt, width, height, NULL); // image size
     memsize += 5 * sizeof(uint32_t); // size, audio format, frequency, channels, samples
@@ -207,6 +207,8 @@ static void consumer_output( mlt_consumer this, void *share, int size, mlt_frame
   mlt_properties properties = MLT_CONSUMER_PROPERTIES( this );
   mlt_properties fprops = MLT_FRAME_PROPERTIES(frame);
 
+  int fr_num = mlt_properties_get_int(properties, "frame_rate_num");
+  int fr_den = mlt_properties_get_int(properties, "frame_rate_den");
   mlt_image_format ifmt = mlt_properties_get_int(properties, "mlt_image_format");
   int width = mlt_properties_get_int(properties, "width");
   int height = mlt_properties_get_int(properties, "height");
@@ -222,12 +224,14 @@ static void consumer_output( mlt_consumer this, void *share, int size, mlt_frame
 
   uint32_t *header = (uint32_t*) walk;
 
-  header[0] = frameno;
-  header[1] = image_size;
-  header[2] = ifmt;
-  header[3] = width;
-  header[4] = height;
-  walk = header + 5;
+  *header++ = frameno;
+  *header++ = fr_num;
+  *header++ = fr_den;
+  *header++ = image_size;
+  *header++ = ifmt;
+  *header++ = width;
+  *header++ = height;
+  walk = header;
   
   memcpy(walk, image, image_size);
   walk += image_size;

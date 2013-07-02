@@ -146,7 +146,7 @@ static void producer_read_frame_data(mlt_producer this, mlt_frame_ptr frame) {
   pthread_rwlock_t *rwlock = mlt_properties_get_data(properties, "_rwlock", NULL);
 
   uint32_t *header = readspace;
-  void *data = readspace + sizeof(uint32_t[5]);
+  void *data = header + 7;
 
   pthread_rwlock_rdlock(rwlock);
 
@@ -160,9 +160,9 @@ static void producer_read_frame_data(mlt_producer this, mlt_frame_ptr frame) {
   
   printf("found frame %d\n", cur_frame);
   */
-  int image_size = header[1];
-  int width = header[3];
-  int height = header[4];
+  int image_size = header[3];
+  int width = header[5];
+  int height = header[6];
 
   mlt_properties_set_int(frame_procs, "width", width);
   mlt_properties_set_int(frame_procs, "height", height);
