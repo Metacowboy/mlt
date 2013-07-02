@@ -205,7 +205,7 @@ static int consumer_is_stopped( mlt_consumer this ) {
 static void consumer_output( mlt_consumer this, void *share, int size, mlt_frame frame ) {
   // Get the properties
   mlt_properties properties = MLT_CONSUMER_PROPERTIES( this );
-  mlt_properties fprops = MLT_FRAME_PROPERTIES(this);
+  mlt_properties fprops = MLT_FRAME_PROPERTIES(frame);
 
   mlt_image_format ifmt = mlt_properties_get_int(properties, "mlt_image_format");
   int width = mlt_properties_get_int(properties, "width");
@@ -240,7 +240,7 @@ static void consumer_output( mlt_consumer this, void *share, int size, mlt_frame
   int frequency = mlt_properties_get_int(fprops, "audio_frequency");
   int channels = mlt_properties_get_int(fprops, "audio_channels");
   int samples = mlt_properties_get_int(fprops, "audio_samples");
-  uint8_t *audio=NULL;
+  void *audio=NULL;
   mlt_frame_get_audio(frame, &audio, &afmt, &frequency, &channels, &samples);
   int audio_size = mlt_audio_format_size(afmt, samples, channels);
 
