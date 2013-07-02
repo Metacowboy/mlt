@@ -72,10 +72,25 @@ mlt_consumer consumer_posixshm_init( mlt_profile profile, mlt_service_type type,
     this->start = consumer_start;
     this->stop = consumer_stop;
     this->is_stopped = consumer_is_stopped;
+  }
+
+  // Return this
+  return this;
+}
+
+/** Start the consumer.
+ */
+
+static int consumer_start( mlt_consumer this ) {
+  // Get the properties
+  mlt_properties properties = MLT_CONSUMER_PROPERTIES( this );
+
+  // Check that we're not already running
+  if ( !mlt_properties_get_int( properties, "running" ) ) {
 
     // set up the shared memory
-    mlt_image_format fmt = mlt_image_yuv422;
-    mlt_properties_set_int(properties, "mlt_image_format", fmt);
+    mlt_image_format ifmt = mlt_image_yuv422;
+    mlt_properties_set_int(properties, "mlt_image_format", ifmt);
     int width = mlt_properties_get_int( properties, "width");
     int height = mlt_properties_get_int( properties, "height");
 
@@ -86,12 +101,24 @@ mlt_consumer consumer_posixshm_init( mlt_profile profile, mlt_service_type type,
       mlt_properties_set_int(properties, "height", height);
     }
 
+    mlt_frame frame = mlt_consumer_rt_frame(this);
+    mlt_properties fprops = MLT_FRAME_PROPERTIES(frame);
+    mlt_audio_format afmt = mlt_audio_s16;
+    int channels = mlt_properties_get_int(fprops, "audio_channels");
+    int samples = mlt_properties_get_int(fprops, "audio_samples");
+
+    mlt_frame_close(frame);
+
+    mlt_properties_set_int(properties, "mlt_audio_format", afmt);
+
     // initialize shared memory
     char *sharedKey = mlt_properties_get(properties, "target");
     int memsize = sizeof(pthread_rwlock_t); // access semaphore
-    memsize += 4 * sizeof(uint32_t); // size, image format, height, width
     memsize += sizeof(uint32_t); // frame number
-    memsize += mlt_image_format_size(fmt, width, height, NULL);
+    memsize += 4 * sizeof(uint32_t); // size, image format, height, width
+    memsize += mlt_image_format_size(ifmt, width, height, NULL); // image size
+    memsize += 5 * sizeof(uint32_t); // size, audio format, frequency, channels, samples
+    memsize += mlt_audio_format_size(afmt, samples, channels); // audio size
 
     /* security concerns: if we want to keep malicious clients from DoS'ing the
        server via the semaphores, or corrupting videos, we should create both the
@@ -121,21 +148,7 @@ mlt_consumer consumer_posixshm_init( mlt_profile profile, mlt_service_type type,
     // the writespace for each frame, after rwlock
     mlt_properties_set_data(properties, "_writespace", share + sizeof(pthread_rwlock_t),
                             memsize - sizeof(pthread_rwlock_t), NULL, NULL);
-  }
 
-  // Return this
-  return this;
-}
-
-/** Start the consumer.
- */
-
-static int consumer_start( mlt_consumer this ) {
-  // Get the properties
-  mlt_properties properties = MLT_CONSUMER_PROPERTIES( this );
-
-  // Check that we're not already running
-  if ( !mlt_properties_get_int( properties, "running" ) ) {
     // Allocate a thread
     pthread_t *thread = calloc( 1, sizeof( pthread_t ) );
 
@@ -191,15 +204,16 @@ static int consumer_is_stopped( mlt_consumer this ) {
 static void consumer_output( mlt_consumer this, void *share, int size, mlt_frame frame ) {
   // Get the properties
   mlt_properties properties = MLT_CONSUMER_PROPERTIES( this );
+  mlt_properties fprops = MLT_FRAME_PROPERTIES(this);
 
-  mlt_image_format fmt = mlt_properties_get_int(properties, "mlt_image_format");
+  mlt_image_format ifmt = mlt_properties_get_int(properties, "mlt_image_format");
   int width = mlt_properties_get_int(properties, "width");
   int height = mlt_properties_get_int(properties, "height");
   int32_t frameno = mlt_consumer_position(this);
   pthread_rwlock_t *rwlock = mlt_properties_get_data(properties, "_rwlock", NULL);
   uint8_t *image=NULL;
-  mlt_frame_get_image(frame, &image, &fmt, &width, &height, 0);
-  int image_size = mlt_image_format_size(fmt, width, height, NULL);
+  mlt_frame_get_image(frame, &image, &ifmt, &width, &height, 0);
+  int image_size = mlt_image_format_size(ifmt, width, height, NULL);
 
   pthread_rwlock_wrlock(rwlock);
 
@@ -207,15 +221,36 @@ static void consumer_output( mlt_consumer this, void *share, int size, mlt_frame
 
   uint32_t *header = (uint32_t*) walk;
 
-  header[0] = image_size;
-  header[1] = fmt;
-  header[2] = width;
-  header[3] = height;
-  header[4] = frameno;
+  header[0] = frameno;
+  header[1] = image_size;
+  header[2] = ifmt;
+  header[3] = width;
+  header[4] = height;
   walk = header + 5;
   
   memcpy(walk, image, image_size);
   walk += image_size;
+
+  header = (uint32_t*) walk;
+
+  // try to get the format defined by the consumer
+  mlt_audio_format afmt = mlt_properties_get_int(properties, "mlt_audio_format");
+  // all other data provided by the producer
+  int frequency = mlt_properties_get_int(fprops, "audio_frequency");
+  int channels = mlt_properties_get_int(fprops, "audio_channels");
+  int samples = mlt_properties_get_int(fprops, "audio_samples");
+  uint8_t *audio=NULL;
+  mlt_frame_get_audio(frame, &audio, &afmt, &frequency, &channels, &samples);
+  int audio_size = mlt_audio_format_size(afmt, samples, channels);
+
+  header[0] = audio_size;
+  header[1] = afmt;
+  header[2] = frequency;
+  header[3] = channels;
+  header[4] = samples;
+  walk = header + 5;
+  
+  memcpy(walk, audio, audio_size);
 
   pthread_rwlock_unlock(rwlock);
 }
