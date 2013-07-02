@@ -75,6 +75,7 @@ mlt_consumer consumer_posixshm_init( mlt_profile profile, mlt_service_type type,
 
     // set up the shared memory
     mlt_image_format fmt = mlt_image_yuv422;
+    mlt_properties_set_int(properties, "mlt_image_format", fmt);
     int width = mlt_properties_get_int( properties, "width");
     int height = mlt_properties_get_int( properties, "height");
 
@@ -120,7 +121,6 @@ mlt_consumer consumer_posixshm_init( mlt_profile profile, mlt_service_type type,
     // the writespace for each frame, after rwlock
     mlt_properties_set_data(properties, "_writespace", share + sizeof(pthread_rwlock_t),
                             memsize - sizeof(pthread_rwlock_t), NULL, NULL);
-    mlt_properties_set_int(properties, "_format", fmt);
   }
 
   // Return this
@@ -192,7 +192,7 @@ static void consumer_output( mlt_consumer this, void *share, int size, mlt_frame
   // Get the properties
   mlt_properties properties = MLT_CONSUMER_PROPERTIES( this );
 
-  mlt_image_format fmt = mlt_properties_get_int(properties, "_format");
+  mlt_image_format fmt = mlt_properties_get_int(properties, "mlt_image_format");
   int width = mlt_properties_get_int(properties, "width");
   int height = mlt_properties_get_int(properties, "height");
   int32_t frameno = mlt_consumer_position(this);
