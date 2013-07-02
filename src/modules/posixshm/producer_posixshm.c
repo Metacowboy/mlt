@@ -74,6 +74,17 @@ mlt_producer producer_posixshm_init( mlt_profile profile, mlt_service_type type,
 
     void *readspace = share + lock_size;
     int read_size = memsize - lock_size;
+    uint32_t *header = readspace;
+
+    // producer properties
+    mlt_properties_set_position(properties, "in", 0);
+    mlt_properties_set_position(properties, "out", -1);
+    mlt_properties_set_int(properties, "meta.media.width", header[5]);
+    mlt_properties_set_int(properties, "meta.media.height", header[6]);
+    mlt_properties_set_int(properties, "meta.media.frame_rate_den", header[1]);
+    mlt_properties_set_int(properties, "meta.media.frame_rate_num", header[2]);
+    mlt_properties_set_int(properties, "meta.media.sample_aspect_den", 1);
+    mlt_properties_set_int(properties, "meta.media.sample_aspect_num", 1);
 
     // shared memory space properties
     mlt_properties_set_data(properties, "_share", share, memsize, NULL, NULL);
