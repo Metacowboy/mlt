@@ -165,6 +165,7 @@ static void producer_read_frame_data(mlt_producer this, mlt_frame_ptr frame) {
 
   while( cur_frame == last_frame ) {
     pthread_rwlock_unlock(rwlock);
+    usleep(10000);
     pthread_rwlock_rdlock(rwlock);
     cur_frame = header[0];
   }
