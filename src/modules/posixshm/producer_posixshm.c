@@ -162,15 +162,14 @@ static void producer_read_frame_data(mlt_producer this, mlt_frame_ptr frame) {
   pthread_rwlock_rdlock(rwlock);
 
   int cur_frame = header[0];
-  /*
-  while( cur_frame <= last_frame ) {
+
+  while( cur_frame == last_frame ) {
     pthread_rwlock_unlock(rwlock);
     pthread_rwlock_rdlock(rwlock);
     cur_frame = header[0];
   }
+  mlt_properties_set_int(properties, "_last_frame", cur_frame);
   
-  printf("found frame %d\n", cur_frame);
-  */
   int image_size = header[3];
   int width = header[5];
   int height = header[6];
