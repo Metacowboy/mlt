@@ -121,6 +121,7 @@ static int producer_get_image( mlt_frame this, uint8_t **buffer, mlt_image_forma
   // Assign width and height according to the frame
   *width = mlt_properties_get_int(properties, "width");
   *height = mlt_properties_get_int(properties, "height");
+  *format = mlt_properties_get_int(properties, "mlt_image_format");
 
   *buffer = mlt_properties_get_data(properties, "_video_data", &image_size);
   mlt_properties_set_data(properties, "_video_data", NULL, 0, NULL, NULL);
@@ -174,9 +175,11 @@ static void producer_read_frame_data(mlt_producer this, mlt_frame_ptr frame) {
   mlt_properties_set_int(properties, "_last_frame", cur_frame);
   
   int image_size = header[3];
+  mlt_image_format ifmt = header[4];
   int width = header[5];
   int height = header[6];
 
+  mlt_properties_set_int(frame_procs, "mlt_image_format", ifmt);
   mlt_properties_set_int(frame_procs, "width", width);
   mlt_properties_set_int(frame_procs, "height", height);
 
