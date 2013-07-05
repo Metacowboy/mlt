@@ -286,6 +286,7 @@ static void *consumer_thread( void *arg ) {
   int fr_num = mlt_properties_get_int(properties, "frame_rate_num");
   struct timespec sleeptime;
 
+  struct timespec endtime;
   // Loop while running
   while( mlt_properties_get_int( properties, "running" ) ) {
     clock_gettime(CLOCK_REALTIME, &sleeptime);
@@ -303,7 +304,6 @@ static void *consumer_thread( void *arg ) {
       mlt_events_fire( properties, "consumer-frame-show", frame, NULL );
       mlt_frame_close(frame);
     }
-    struct timespec endtime;
     clock_gettime(CLOCK_REALTIME, &endtime);
     long int elapsed = 1000000000 * (endtime.tv_sec - sleeptime.tv_sec) + (endtime.tv_nsec - sleeptime.tv_nsec);
     sleeptime.tv_sec = 0;
