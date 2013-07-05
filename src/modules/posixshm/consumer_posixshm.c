@@ -82,6 +82,13 @@ mlt_consumer consumer_posixshm_init( mlt_profile profile, mlt_service_type type,
 /** Start the consumer.
  */
 
+static void init_rwlock(pthread_rwlock_t *rwlock) {
+  pthread_rwlockattr_t rwlock_attr;
+  pthread_rwlockattr_init(&rwlock_attr);
+  pthread_rwlockattr_setpshared(&rwlock_attr, PTHREAD_PROCESS_SHARED);
+  pthread_rwlock_init(rwlock, &rwlock_attr);
+}
+
 static int consumer_start( mlt_consumer this ) {
   // Get the properties
   mlt_properties properties = MLT_CONSUMER_PROPERTIES( this );
@@ -132,10 +139,7 @@ static int consumer_start( mlt_consumer this ) {
     void *share = mmap(NULL, memsize, PROT_READ | PROT_WRITE, MAP_SHARED, shareId, 0);
 
     // create semaphore
-    pthread_rwlockattr_t rwlock_attr;
-    pthread_rwlockattr_init(&rwlock_attr);
-    pthread_rwlockattr_setpshared(&rwlock_attr, PTHREAD_PROCESS_SHARED);
-    pthread_rwlock_init(share, &rwlock_attr);
+    init_rwlock(share);
     pthread_rwlock_t *rwlock = (pthread_rwlock_t*)share;
 
     close(shareId);
