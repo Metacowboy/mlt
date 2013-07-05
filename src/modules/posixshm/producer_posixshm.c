@@ -86,6 +86,8 @@ mlt_producer producer_posixshm_init( mlt_profile profile, mlt_service_type type,
     mlt_properties_set_int(properties, "meta.media.sample_aspect_den", 1);
     mlt_properties_set_int(properties, "meta.media.sample_aspect_num", 1);
 
+    mlt_properties_set_int(properties, "meta.media.colorspace", 601 );
+
     // shared memory space properties
     mlt_properties_set_data(properties, "_share", share, memsize, NULL, NULL);
     mlt_properties_set_int(properties, "_shareSize", memsize);
