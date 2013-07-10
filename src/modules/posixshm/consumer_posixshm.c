@@ -30,6 +30,8 @@
 #include <fcntl.h>
 #include <unistd.h>
 
+#include "common.h"
+
 // Forward references.
 static int consumer_start( mlt_consumer this );
 static int consumer_stop( mlt_consumer this );
@@ -122,10 +124,8 @@ static int consumer_start( mlt_consumer this ) {
     // initialize shared memory
     char *sharedKey = mlt_properties_get(properties, "target");
     int memsize = sizeof(pthread_rwlock_t); // access semaphore
-    memsize += 3 * sizeof(uint32_t); // frame number, frame rate num/den
-    memsize += 4 * sizeof(uint32_t); // size, image format, height, width
+    memsize += sizeof(struct posix_shm_header);
     memsize += mlt_image_format_size(ifmt, width, height, NULL); // image size
-    memsize += 5 * sizeof(uint32_t); // size, audio format, frequency, channels, samples
     memsize += mlt_audio_format_size(afmt, samples, channels); // audio size
 
     /* security concerns: if we want to keep malicious clients from DoS'ing the
@@ -226,21 +226,19 @@ static void consumer_output( mlt_consumer this, void *share, int size, mlt_frame
 
   void *walk = share;
 
-  uint32_t *header = (uint32_t*) walk;
+  struct posix_shm_header *header = (struct posix_shm_header*) walk;
+  walk += sizeof(struct posix_shm_header);
 
-  *header++ = frameno;
-  *header++ = fr_num;
-  *header++ = fr_den;
-  *header++ = image_size;
-  *header++ = ifmt;
-  *header++ = width;
-  *header++ = height;
-  walk = header;
+  header->frame = frameno;
+  header->frame_rate_num = fr_num;
+  header->frame_rate_den = fr_den;
+  header->image_size = image_size;
+  header->image_format = ifmt;
+  header->width = width;
+  header->height = height;
   
   memcpy(walk, image, image_size);
   walk += image_size;
-
-  header = (uint32_t*) walk;
 
   // try to get the format defined by the consumer
   mlt_audio_format afmt = mlt_properties_get_int(properties, "mlt_audio_format");
@@ -252,12 +250,11 @@ static void consumer_output( mlt_consumer this, void *share, int size, mlt_frame
   mlt_frame_get_audio(frame, &audio, &afmt, &frequency, &channels, &samples);
   int audio_size = mlt_audio_format_size(afmt, samples, channels);
 
-  header[0] = audio_size;
-  header[1] = afmt;
-  header[2] = frequency;
-  header[3] = channels;
-  header[4] = samples;
-  walk = header + 5;
+  header->audio_size = audio_size;
+  header->audio_format = afmt;
+  header->frequency = frequency;
+  header->channels = channels;
+  header->samples = samples;
   
   memcpy(walk, audio, audio_size);
 

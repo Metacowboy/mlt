@@ -31,6 +31,8 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
+#include "common.h"
+
 static int producer_get_frame( mlt_producer parent, mlt_frame_ptr frame, int index );
 static void producer_close( mlt_producer parent );
 
@@ -74,15 +76,15 @@ mlt_producer producer_posixshm_init( mlt_profile profile, mlt_service_type type,
 
     void *readspace = share + lock_size;
     int read_size = memsize - lock_size;
-    uint32_t *header = readspace;
+    struct posix_shm_header *header = (struct posix_shm_header*)readspace;
 
     // producer properties
     mlt_properties_set_position(properties, "in", 0);
     mlt_properties_set_position(properties, "out", -1);
-    mlt_properties_set_int(properties, "meta.media.width", header[5]);
-    mlt_properties_set_int(properties, "meta.media.height", header[6]);
-    mlt_properties_set_int(properties, "meta.media.frame_rate_num", header[1]);
-    mlt_properties_set_int(properties, "meta.media.frame_rate_den", header[2]);
+    mlt_properties_set_int(properties, "meta.media.width", header->width);
+    mlt_properties_set_int(properties, "meta.media.height", header->height);
+    mlt_properties_set_int(properties, "meta.media.frame_rate_num", header->frame_rate_num);
+    mlt_properties_set_int(properties, "meta.media.frame_rate_den", header->frame_rate_den);
     mlt_properties_set_int(properties, "meta.media.sample_aspect_den", 1);
     mlt_properties_set_int(properties, "meta.media.sample_aspect_num", 1);
 
@@ -112,6 +114,81 @@ mlt_producer producer_posixshm_init( mlt_profile profile, mlt_service_type type,
 
   free( this );
   return NULL;
+}
+
+static void producer_read_frame_data(mlt_producer this, mlt_frame_ptr frame) {
+  // get the producer properties
+  mlt_properties properties = MLT_PRODUCER_PROPERTIES(this);
+  // Get the frames properties
+  mlt_properties frame_props = MLT_FRAME_PROPERTIES(*frame);
+
+  int last_frame = mlt_properties_get_int(properties, "_last_frame");
+
+  void *readspace = mlt_properties_get_data(properties, "_readspace", NULL);
+  pthread_rwlock_t *rwlock = mlt_properties_get_data(properties, "_rwlock", NULL);
+
+  struct posix_shm_header *header = readspace;
+  void *data = readspace + sizeof(struct posix_shm_header);
+
+  pthread_rwlock_rdlock(rwlock);
+
+  while( header->frame == last_frame ) {
+    pthread_rwlock_unlock(rwlock);
+    usleep(10000);
+    pthread_rwlock_rdlock(rwlock);
+  }
+
+  mlt_properties_set_int(properties, "_last_frame", header->frame);
+
+  int frame_rate_num = header->frame_rate_num;
+  int frame_rate_den = header->frame_rate_den;
+  int image_size = header->image_size;
+  mlt_image_format ifmt = header->image_format;
+  int width = header->width;
+  int height = header->height;
+
+  int audio_size = header->audio_size;
+  int afmt = header->audio_format;
+  int frequency = header->frequency;
+  int channels = header->channels;
+  int samples = header->samples;
+
+  void *buffer = mlt_pool_alloc(image_size);
+  memcpy(buffer, data, image_size);
+  mlt_frame_set_image(*frame, buffer, image_size, mlt_pool_release);
+  //mlt_properties_set_data(frame_props, "_video_data", buffer, image_size, mlt_pool_release, NULL);
+
+  data += image_size;
+  buffer = mlt_pool_alloc(audio_size);
+  memcpy(buffer, data, audio_size);
+  mlt_frame_set_audio(*frame, buffer, afmt, audio_size, mlt_pool_release);
+  //mlt_properties_set_data(frame_props, "_audio_data", buffer, audio_size, mlt_pool_release, NULL);
+
+  // release read image lock
+  pthread_rwlock_unlock(rwlock);
+
+  mlt_profile profile = mlt_service_profile( MLT_PRODUCER_SERVICE(this) );
+
+  mlt_properties_set_int(frame_props, "mlt_image_format", ifmt);
+  mlt_properties_set_int(frame_props, "width", width);
+  mlt_properties_set_int(frame_props, "height", height);
+
+  mlt_properties_set_int(frame_props, "audio_format", afmt);
+  mlt_properties_set_int(frame_props, "audio_frequency", frequency);
+  mlt_properties_set_int(frame_props, "audio_channels", channels);
+  mlt_properties_set_int(frame_props, "audio_samples", samples);
+
+  mlt_properties_set_int( frame_props, "progressive", profile->progressive );
+  //mlt_properties_set_int( frame_props, "top_field_first", m_topFieldFirst );
+  mlt_properties_set_double( frame_props, "aspect_ratio", mlt_profile_sar( profile ) );
+  mlt_properties_set_int(frame_props, "frame_rate_num", frame_rate_num);
+  mlt_properties_set_int(frame_props, "frame_rate_den", frame_rate_den);
+  mlt_properties_set_int( frame_props, "width", width );
+  mlt_properties_set_int( frame_props, "height", height );
+  mlt_properties_set_int( frame_props, "format", ifmt );
+  mlt_properties_set_int( frame_props, "colorspace", 601 );
+  mlt_properties_set_int( frame_props, "audio_frequency", frequency);
+  mlt_properties_set_int(frame_props, "audio_channels", channels);
 }
 
 static int producer_get_image( mlt_frame this, uint8_t **buffer, mlt_image_format *format, int *width, int *height, int writable ) {
@@ -145,67 +222,6 @@ static int producer_get_audio( mlt_frame this, void **buffer, mlt_audio_format *
   mlt_frame_set_audio(this, *buffer, *format, size, mlt_pool_release);
   
   return 0;
-}
-
-
-static void producer_read_frame_data(mlt_producer this, mlt_frame_ptr frame) {
-  // get the producer properties
-  mlt_properties properties = MLT_PRODUCER_PROPERTIES(this);
-  // Get the frames properties
-  mlt_properties frame_procs = MLT_FRAME_PROPERTIES(*frame);
-
-  int last_frame = mlt_properties_get_int(properties, "_last_frame");
-
-  void *readspace = mlt_properties_get_data(properties, "_readspace", NULL);
-  pthread_rwlock_t *rwlock = mlt_properties_get_data(properties, "_rwlock", NULL);
-
-  uint32_t *header = readspace;
-  void *data = header + 7;
-
-  pthread_rwlock_rdlock(rwlock);
-
-  int cur_frame = header[0];
-
-  while( cur_frame == last_frame ) {
-    pthread_rwlock_unlock(rwlock);
-    usleep(10000);
-    pthread_rwlock_rdlock(rwlock);
-    cur_frame = header[0];
-  }
-  mlt_properties_set_int(properties, "_last_frame", cur_frame);
-  
-  int image_size = header[3];
-  mlt_image_format ifmt = header[4];
-  int width = header[5];
-  int height = header[6];
-
-  mlt_properties_set_int(frame_procs, "mlt_image_format", ifmt);
-  mlt_properties_set_int(frame_procs, "width", width);
-  mlt_properties_set_int(frame_procs, "height", height);
-
-  void *buffer = mlt_pool_alloc(image_size);
-  memcpy(buffer, data, image_size);
-  mlt_properties_set_data(frame_procs, "_video_data", buffer, image_size, mlt_pool_release, NULL);
-
-  header = data + image_size;
-  int audio_size = header[0];
-  int afmt = header[1];
-  int frequency = header[2];
-  int channels = header[3];
-  int samples = header[4];
-
-  mlt_properties_set_int(frame_procs, "audio_format", afmt);
-  mlt_properties_set_int(frame_procs, "audio_frequency", frequency);
-  mlt_properties_set_int(frame_procs, "audio_channels", channels);
-  mlt_properties_set_int(frame_procs, "audio_samples", samples);
-
-  data = header + 5;
-  buffer = mlt_pool_alloc(audio_size);
-  memcpy(buffer, data, audio_size);
-  mlt_properties_set_data(frame_procs, "_audio_data", buffer, audio_size, mlt_pool_release, NULL);
-
-  // release read image lock
-  pthread_rwlock_unlock(rwlock);
 }
 
 static int producer_get_frame( mlt_producer producer, mlt_frame_ptr frame, int index )
