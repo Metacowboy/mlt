@@ -312,17 +312,13 @@ static int producer_get_frame( mlt_producer producer, mlt_frame_ptr frame, int i
   //mlt_properties_set_int( properties, "progressive", dv_is_progressive( dv_decoder ) );
   //mlt_properties_set_double(properties, "aspect_ratio", (double)width / (double)height);
 
-  producer_read_frame_data(producer, frame);
-
   // Push the get_image method onto the stack
-  mlt_frame_push_get_image( *frame, producer_get_image );
+  mlt_frame_push_get_image(*frame, mlt_frame_get_image);
 
   // Push the get_audio method onto the stack
-  mlt_frame_push_audio( *frame, producer_get_audio );
-
+  mlt_frame_push_audio(*frame, mlt_frame_get_audio);
   // Update timecode on the frame we're creating
-  if ( *frame != NULL )
-    mlt_frame_set_position( *frame, mlt_producer_position( producer ) );
+  mlt_frame_set_position( *frame, mlt_producer_position( producer ) );
 
   // Calculate the next timecode
   mlt_producer_prepare_next( producer );
