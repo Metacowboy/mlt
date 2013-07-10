@@ -286,11 +286,19 @@ static void *consumer_thread( void *arg ) {
   int fr_den = mlt_properties_get_int(properties, "frame_rate_den");
   int fr_num = mlt_properties_get_int(properties, "frame_rate_num");
   struct timespec sleeptime;
-
   struct timespec endtime;
+
+  struct timespec starttime;
+  clock_gettime(CLOCK_REALTIME, &starttime);
+  uint64_t nanosec = starttime.tv_sec * 1000000000 + starttime.tv_nsec;
+
+  //uint64_t frametime = (fr_den * 1000000000) / fr_num;
+  uint64_t frametime = fr_den;
+  frametime *= 1000000000;
+  frametime /= fr_num;
+
   // Loop while running
   while( mlt_properties_get_int( properties, "running" ) ) {
-    clock_gettime(CLOCK_REALTIME, &sleeptime);
     // Get the frame
     frame = mlt_consumer_rt_frame( this );
 
@@ -305,11 +313,10 @@ static void *consumer_thread( void *arg ) {
       mlt_events_fire( properties, "consumer-frame-show", frame, NULL );
       mlt_frame_close(frame);
     }
-    clock_gettime(CLOCK_REALTIME, &endtime);
-    long int elapsed = 1000000000 * (endtime.tv_sec - sleeptime.tv_sec) + (endtime.tv_nsec - sleeptime.tv_nsec);
-    sleeptime.tv_sec = 0;
-    sleeptime.tv_nsec = ((double)fr_den / (double)fr_num) * 1000000000 - elapsed;
-    clock_nanosleep(CLOCK_REALTIME, 0, &sleeptime, NULL);
+    nanosec += frametime;
+    sleeptime.tv_sec = nanosec / 1000000000;
+    sleeptime.tv_nsec = nanosec % 1000000000;
+    clock_nanosleep(CLOCK_REALTIME, TIMER_ABSTIME, &sleeptime, NULL);
   }
 
   mlt_consumer_stopped( this );
