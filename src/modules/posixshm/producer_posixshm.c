@@ -19,6 +19,7 @@
  */
 
 #include <framework/mlt.h>
+#include <framework/mlt_types.h>
 #include <framework/mlt_pool.h>
 
 #include <pthread.h>
@@ -35,6 +36,7 @@
 
 static int producer_get_frame( mlt_producer parent, mlt_frame_ptr frame, int index );
 static void producer_close( mlt_producer parent );
+static void* producer_thread(void *arg);
 
 mlt_producer producer_posixshm_init( mlt_profile profile, mlt_service_type type, const char *id, char *source ) {
   mlt_producer this = mlt_producer_new(profile);
@@ -101,6 +103,21 @@ mlt_producer producer_posixshm_init( mlt_profile profile, mlt_service_type type,
 
     // last read frame
     mlt_properties_set_int(properties, "_last_frame", -1);
+
+    // buffer mutex
+    pthread_mutex_t *mutex = malloc(sizeof(pthread_mutex_t));
+    pthread_mutex_init(mutex, NULL);
+    mlt_properties_set_data(properties, "_queue_mutex", mutex, sizeof(pthread_mutex_t), free, NULL);
+    
+    // buffer
+    mlt_deque queue = mlt_deque_init();
+    mlt_properties_set_data(properties, "_queue", queue, sizeof(mlt_deque), mlt_deque_close, NULL);
+    mlt_properties_set_int(properties, "_buffer", 25);
+    mlt_properties_set_int(properties, "_buffering", 1);
+    // read frame thread
+    pthread_t *thread = malloc(sizeof(pthread_t));
+    mlt_properties_set_data(properties, "_thread", thread, sizeof(pthread_t), free, NULL);
+    pthread_create(thread, NULL, producer_thread, this);
 
     // If we couldn't open the file, then destroy it now
     if ( destroy ) {
@@ -191,7 +208,30 @@ static void producer_read_frame_data(mlt_producer this, mlt_frame_ptr frame) {
   mlt_properties_set_int(frame_props, "audio_channels", channels);
 }
 
+static void* producer_thread(void *arg) {
+  mlt_producer this = arg;
+  mlt_properties properties = MLT_PRODUCER_PROPERTIES(this);
+  pthread_mutex_t *mutex = mlt_properties_get_data(properties, "_queue_mutex", NULL);
+  mlt_deque queue = mlt_properties_get_data(properties, "_queue", NULL);
+
+  mlt_properties_set_int(properties, "_running", 1);
+
+  while( mlt_properties_get_int(properties, "_running") ) {
+    mlt_frame frame = mlt_frame_init(MLT_PRODUCER_SERVICE(this));
+    producer_read_frame_data(this, &frame);
+    pthread_mutex_lock(mutex);
+    mlt_deque_push_back(queue, frame);
+    printf("\npushed queue: %d\n", mlt_deque_count(queue));
+    pthread_mutex_unlock(mutex);
+  }
+
+  return NULL;
+}
+
 static int producer_get_image( mlt_frame this, uint8_t **buffer, mlt_image_format *format, int *width, int *height, int writable ) {
+  //mlt_producer producer = mlt_frame_pop_service(this);
+  //producer_read_frame_data(producer, &this);
+
   mlt_properties properties = MLT_FRAME_PROPERTIES(this);
 
   int image_size;
@@ -226,8 +266,38 @@ static int producer_get_audio( mlt_frame this, void **buffer, mlt_audio_format *
 
 static int producer_get_frame( mlt_producer producer, mlt_frame_ptr frame, int index )
 {
-  // Create an empty frame
-  *frame = mlt_frame_init( MLT_PRODUCER_SERVICE( producer ) );
+  mlt_properties prod_props = MLT_PRODUCER_PROPERTIES(producer);
+  mlt_deque queue = mlt_properties_get_data(prod_props, "_queue", NULL);
+  pthread_mutex_t *mutex = mlt_properties_get_data(prod_props, "_queue_mutex", NULL);
+  int buffering = mlt_properties_get_int(prod_props, "_buffering");
+  int frn = mlt_properties_get_int(prod_props, "meta.media.frame_rate_num");
+  int frd = mlt_properties_get_int(prod_props, "meta.media.frame_rate_den");
+
+  if(buffering) {
+    mlt_properties_set_int(prod_props, "_buffering", 0);
+    int buffer = mlt_properties_get_int(prod_props, "_buffer");
+    pthread_mutex_lock(mutex);
+    while(mlt_deque_count(queue) < buffer) {
+      // wait 1/3 of 1/fps
+      pthread_mutex_unlock(mutex);
+      usleep((frd*1000000)/(frn*3));
+      pthread_mutex_lock(mutex);
+      // this could be somewhat simplified with a pthread_cond
+    }
+    pthread_mutex_unlock(mutex);
+  }
+
+  pthread_mutex_lock(mutex);
+  while(mlt_deque_count(queue) < 1) {
+    // again, this would be simpler with a pthread_cond and it MIGHT lead to a total lockdown
+    pthread_mutex_unlock(mutex);
+    usleep((frd*1000000)/(frn*3));
+    pthread_mutex_lock(mutex);
+  }
+  printf("\nqueue: %d\n", mlt_deque_count(queue));
+  // Get frame from queue
+  *frame = (mlt_frame)mlt_deque_pop_front(queue);
+  pthread_mutex_unlock(mutex);
 
   // Get the frames properties
   mlt_properties properties = MLT_FRAME_PROPERTIES( *frame );
@@ -263,5 +333,12 @@ static void producer_close( mlt_producer this )
 {
   // Close the parent
   this->close = NULL;
+  mlt_properties properties = MLT_PRODUCER_PROPERTIES(this);
+  if(mlt_properties_get_int(properties, "_running")) {
+    pthread_t *thread = mlt_properties_get_data(properties, "_thread", NULL);
+    mlt_properties_set_int(properties, "_running", 0);
+    // Wait for termination
+    pthread_join( *thread, NULL );
+  }
   mlt_producer_close(this);
 }
