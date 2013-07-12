@@ -157,7 +157,7 @@ static void producer_read_frame_data(mlt_producer this, mlt_frame_ptr frame) {
     pthread_rwlock_rdlock(&control->rwlock);
     pthread_mutex_unlock(&control->fr_mutex);
   }
-
+  mlt_properties_set_int(frame_props, "_consecutive", header->frame == (last_frame + 1));
   mlt_properties_set_int(properties, "_last_frame", header->frame);
 
   int frame_rate_num = header->frame_rate_num;
@@ -223,6 +223,10 @@ static void* producer_thread(void *arg) {
     mlt_frame frame = mlt_frame_init(MLT_PRODUCER_SERVICE(this));
     producer_read_frame_data(this, &frame);
     pthread_mutex_lock(mutex);
+    if(!mlt_properties_get_int(MLT_FRAME_PROPERTIES(frame), "_consecutive")) {
+      while(mlt_deque_count(queue))
+        mlt_deque_pop_front(queue);
+    }
     mlt_deque_push_back(queue, frame);
     //printf("\npushed queue: %d\n", mlt_deque_count(queue));
     pthread_mutex_unlock(mutex);
