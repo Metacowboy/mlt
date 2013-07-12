@@ -109,6 +109,9 @@ mlt_producer producer_posixshm_init( mlt_profile profile, mlt_service_type type,
     pthread_mutex_t *mutex = malloc(sizeof(pthread_mutex_t));
     pthread_mutex_init(mutex, NULL);
     mlt_properties_set_data(properties, "_queue_mutex", mutex, sizeof(pthread_mutex_t), free, NULL);
+    pthread_cond_t *cond = malloc(sizeof(pthread_cond_t));
+    pthread_cond_init(cond, NULL);
+    mlt_properties_set_data(properties, "_queue_cond", cond, sizeof(pthread_cond_t), free, NULL);
     
     // buffer
     mlt_deque queue = mlt_deque_init();
@@ -215,6 +218,7 @@ static void* producer_thread(void *arg) {
   mlt_producer this = arg;
   mlt_properties properties = MLT_PRODUCER_PROPERTIES(this);
   pthread_mutex_t *mutex = mlt_properties_get_data(properties, "_queue_mutex", NULL);
+  pthread_cond_t  *cond  = mlt_properties_get_data(properties, "_queue_cond", NULL);
   mlt_deque queue = mlt_properties_get_data(properties, "_queue", NULL);
 
   mlt_properties_set_int(properties, "_running", 1);
@@ -230,6 +234,7 @@ static void* producer_thread(void *arg) {
     mlt_deque_push_back(queue, frame);
     //printf("\npushed queue: %d\n", mlt_deque_count(queue));
     pthread_mutex_unlock(mutex);
+    pthread_cond_broadcast(cond);
   }
 
   return NULL;
@@ -277,7 +282,9 @@ static int producer_get_frame( mlt_producer producer, mlt_frame_ptr frame, int i
   struct posixshm_control *control = mlt_properties_get_data(prod_props, "_control", NULL);
   mlt_deque queue = mlt_properties_get_data(prod_props, "_queue", NULL);
   pthread_mutex_t *mutex = mlt_properties_get_data(prod_props, "_queue_mutex", NULL);
+  pthread_cond_t *cond = mlt_properties_get_data(prod_props, "_queue_cond", NULL);
   int buffering = mlt_properties_get_int(prod_props, "_buffering");
+
   int frn = mlt_properties_get_int(prod_props, "meta.media.frame_rate_num");
   int frd = mlt_properties_get_int(prod_props, "meta.media.frame_rate_den");
 
@@ -286,21 +293,14 @@ static int producer_get_frame( mlt_producer producer, mlt_frame_ptr frame, int i
     int buffer = mlt_properties_get_int(prod_props, "_buffer");
     pthread_mutex_lock(mutex);
     while(mlt_deque_count(queue) < buffer) {
-      // wait 1/3 of 1/fps
-      pthread_mutex_unlock(mutex);
-      usleep((frd*1000000)/(frn*3));
-      pthread_mutex_lock(mutex);
-      // this could be somewhat simplified with a pthread_cond
+      pthread_cond_wait(cond, mutex);
     }
     pthread_mutex_unlock(mutex);
   }
 
   pthread_mutex_lock(mutex);
   while(mlt_deque_count(queue) < 1) {
-    // again, this would be simpler with a pthread_cond and it MIGHT lead to a total lockdown
-    pthread_mutex_unlock(mutex);
-    usleep((frd*1000000)/(frn*3));
-    pthread_mutex_lock(mutex);
+    pthread_cond_wait(cond, mutex);
   }
   printf("\nqueue: %d\n", mlt_deque_count(queue));
   // Get frame from queue
