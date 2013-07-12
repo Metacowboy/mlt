@@ -1,7 +1,12 @@
 #ifndef _POSIXSHM_COMMON_H_
 #define _POSIXSHM_COMMON_H_
 
+#include <pthread.h>
 #include <framework/mlt.h>
+
+struct posixshm_control {
+  pthread_rwlock_t rwlock;
+};
 
 struct posix_shm_header {
   uint32_t frame;

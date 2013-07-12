@@ -73,11 +73,12 @@ mlt_producer producer_posixshm_init( mlt_profile profile, mlt_service_type type,
     close(shareId);
 
     // initialize semaphore
-    pthread_rwlock_t *rwlock = (pthread_rwlock_t*)share;
-    int lock_size = sizeof(pthread_rwlock_t);
+    struct posixshm_control *control = (struct posixshm_control*) share;
 
-    void *readspace = share + lock_size;
-    int read_size = memsize - lock_size;
+    int control_size = sizeof(struct posixshm_control);
+
+    void *readspace = share + control_size;
+    int read_size = memsize - control_size;
     struct posix_shm_header *header = (struct posix_shm_header*)readspace;
 
     // producer properties
@@ -96,8 +97,8 @@ mlt_producer producer_posixshm_init( mlt_profile profile, mlt_service_type type,
     mlt_properties_set_data(properties, "_share", share, memsize, NULL, NULL);
     mlt_properties_set_int(properties, "_shareSize", memsize);
     mlt_properties_set(properties, "_sharedKey", sharedKey);
-    // rwlock
-    mlt_properties_set_data(properties, "_rwlock", rwlock, lock_size, NULL, NULL);
+    // control
+    mlt_properties_set_data(properties, "_control", control, control_size, NULL, NULL);
     // frame readspace
     mlt_properties_set_data(properties, "_readspace", readspace,read_size , NULL, NULL);
 
@@ -142,17 +143,16 @@ static void producer_read_frame_data(mlt_producer this, mlt_frame_ptr frame) {
   int last_frame = mlt_properties_get_int(properties, "_last_frame");
 
   void *readspace = mlt_properties_get_data(properties, "_readspace", NULL);
-  pthread_rwlock_t *rwlock = mlt_properties_get_data(properties, "_rwlock", NULL);
+  struct posixshm_control *control = mlt_properties_get_data(properties, "_control", NULL);
 
   struct posix_shm_header *header = readspace;
   void *data = readspace + sizeof(struct posix_shm_header);
 
-  pthread_rwlock_rdlock(rwlock);
+  pthread_rwlock_rdlock(&control->rwlock);
 
-  while( header->frame == last_frame ) {
-    pthread_rwlock_unlock(rwlock);
-    usleep(10000);
-    pthread_rwlock_rdlock(rwlock);
+  while(header->frame == last_frame) {
+    pthread_rwlock_unlock(&control->rwlock);
+    pthread_rwlock_rdlock(&control->rwlock);
   }
 
   mlt_properties_set_int(properties, "_last_frame", header->frame);
@@ -182,7 +182,7 @@ static void producer_read_frame_data(mlt_producer this, mlt_frame_ptr frame) {
   //mlt_properties_set_data(frame_props, "_audio_data", buffer, audio_size, mlt_pool_release, NULL);
 
   // release read image lock
-  pthread_rwlock_unlock(rwlock);
+  pthread_rwlock_unlock(&control->rwlock);
 
   mlt_profile profile = mlt_service_profile( MLT_PRODUCER_SERVICE(this) );
 
@@ -221,7 +221,7 @@ static void* producer_thread(void *arg) {
     producer_read_frame_data(this, &frame);
     pthread_mutex_lock(mutex);
     mlt_deque_push_back(queue, frame);
-    printf("\npushed queue: %d\n", mlt_deque_count(queue));
+    //printf("\npushed queue: %d\n", mlt_deque_count(queue));
     pthread_mutex_unlock(mutex);
   }
 
@@ -260,13 +260,14 @@ static int producer_get_audio( mlt_frame this, void **buffer, mlt_audio_format *
   *buffer = mlt_properties_get_data(properties, "_audio_data", &size);
   mlt_properties_set_data(properties, "_audio_data", NULL, 0, NULL, NULL);
   mlt_frame_set_audio(this, *buffer, *format, size, mlt_pool_release);
-  
+
   return 0;
 }
 
 static int producer_get_frame( mlt_producer producer, mlt_frame_ptr frame, int index )
 {
   mlt_properties prod_props = MLT_PRODUCER_PROPERTIES(producer);
+  struct posixshm_control *control = mlt_properties_get_data(prod_props, "_control", NULL);
   mlt_deque queue = mlt_properties_get_data(prod_props, "_queue", NULL);
   pthread_mutex_t *mutex = mlt_properties_get_data(prod_props, "_queue_mutex", NULL);
   int buffering = mlt_properties_get_int(prod_props, "_buffering");

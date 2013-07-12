@@ -84,11 +84,12 @@ mlt_consumer consumer_posixshm_init( mlt_profile profile, mlt_service_type type,
 /** Start the consumer.
  */
 
-static void init_rwlock(pthread_rwlock_t *rwlock) {
+static void init_control(struct posixshm_control *control) {
+  // init lock
   pthread_rwlockattr_t rwlock_attr;
   pthread_rwlockattr_init(&rwlock_attr);
   pthread_rwlockattr_setpshared(&rwlock_attr, PTHREAD_PROCESS_SHARED);
-  pthread_rwlock_init(rwlock, &rwlock_attr);
+  pthread_rwlock_init(&control->rwlock, &rwlock_attr);
 }
 
 static int consumer_start( mlt_consumer this ) {
@@ -123,7 +124,7 @@ static int consumer_start( mlt_consumer this ) {
 
     // initialize shared memory
     char *sharedKey = mlt_properties_get(properties, "target");
-    int memsize = sizeof(pthread_rwlock_t); // access semaphore
+    int memsize = sizeof(struct posixshm_control); // access semaphore
     memsize += sizeof(struct posix_shm_header);
     memsize += mlt_image_format_size(ifmt, width, height, NULL); // image size
     memsize += mlt_audio_format_size(afmt, samples, channels); // audio size
@@ -139,8 +140,8 @@ static int consumer_start( mlt_consumer this ) {
     void *share = mmap(NULL, memsize, PROT_READ | PROT_WRITE, MAP_SHARED, shareId, 0);
 
     // create semaphore
-    init_rwlock(share);
-    pthread_rwlock_t *rwlock = (pthread_rwlock_t*)share;
+    struct posixshm_control *control = (struct posixshm_control*)share;
+    init_control(control);
 
     close(shareId);
 
@@ -149,10 +150,10 @@ static int consumer_start( mlt_consumer this ) {
     mlt_properties_set_int(properties, "_shareSize", memsize);
     mlt_properties_set(properties, "_sharedKey", sharedKey);
     // the rwlock at the beginning of _share
-    mlt_properties_set_data(properties, "_rwlock", rwlock, sizeof(pthread_rwlock_t), NULL, NULL);
+    mlt_properties_set_data(properties, "_control", control, sizeof(struct posixshm_control), NULL, NULL);
     // the writespace for each frame, after rwlock
-    mlt_properties_set_data(properties, "_writespace", share + sizeof(pthread_rwlock_t),
-                            memsize - sizeof(pthread_rwlock_t), NULL, NULL);
+    mlt_properties_set_data(properties, "_writespace", share + sizeof(struct posixshm_control),
+                            memsize - sizeof(struct posixshm_control), NULL, NULL);
 
     // Allocate a thread
     pthread_t *thread = calloc( 1, sizeof( pthread_t ) );
@@ -217,12 +218,12 @@ static void consumer_output( mlt_consumer this, void *share, int size, mlt_frame
   int width = mlt_properties_get_int(properties, "width");
   int height = mlt_properties_get_int(properties, "height");
   int32_t frameno = mlt_consumer_position(this);
-  pthread_rwlock_t *rwlock = mlt_properties_get_data(properties, "_rwlock", NULL);
+  struct posixshm_control *control = mlt_properties_get_data(properties, "_control", NULL);
   uint8_t *image=NULL;
   mlt_frame_get_image(frame, &image, &ifmt, &width, &height, 0);
   int image_size = mlt_image_format_size(ifmt, width, height, NULL);
 
-  pthread_rwlock_wrlock(rwlock);
+  pthread_rwlock_wrlock(&control->rwlock);
 
   void *walk = share;
 
@@ -258,7 +259,7 @@ static void consumer_output( mlt_consumer this, void *share, int size, mlt_frame
   
   memcpy(walk, audio, audio_size);
 
-  pthread_rwlock_unlock(rwlock);
+  pthread_rwlock_unlock(&control->rwlock);
 }
 
 /** The main thread - the argument is simply the consumer.
@@ -286,7 +287,6 @@ static void *consumer_thread( void *arg ) {
   int fr_den = mlt_properties_get_int(properties, "frame_rate_den");
   int fr_num = mlt_properties_get_int(properties, "frame_rate_num");
   struct timespec sleeptime;
-  struct timespec endtime;
 
   struct timespec starttime;
   clock_gettime(CLOCK_REALTIME, &starttime);
