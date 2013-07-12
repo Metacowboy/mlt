@@ -37,6 +37,7 @@
 static int producer_get_frame( mlt_producer parent, mlt_frame_ptr frame, int index );
 static void producer_close( mlt_producer parent );
 static void* producer_thread(void *arg);
+static mlt_cache m_cache;
 
 mlt_producer producer_posixshm_init( mlt_profile profile, mlt_service_type type, const char *id, char *source ) {
   mlt_producer this = mlt_producer_new(profile);
@@ -115,12 +116,18 @@ mlt_producer producer_posixshm_init( mlt_profile profile, mlt_service_type type,
     pthread_cond_t *cond = malloc(sizeof(pthread_cond_t));
     pthread_cond_init(cond, NULL);
     mlt_properties_set_data(properties, "_queue_cond", cond, sizeof(pthread_cond_t), free, NULL);
-    
+
     // buffer
     mlt_deque queue = mlt_deque_init();
     mlt_properties_set_data(properties, "_queue", queue, sizeof(mlt_deque), mlt_deque_close, NULL);
     mlt_properties_set_int(properties, "_buffer", 25);
     mlt_properties_set_int(properties, "_buffering", 1);
+
+    // Cache
+    m_cache = mlt_cache_init();
+    // 3 covers YADIF and increasing framerate use cases
+    mlt_cache_set_size( m_cache, 5 );
+
     // read frame thread
     pthread_t *thread = malloc(sizeof(pthread_t));
     mlt_properties_set_data(properties, "_thread", thread, sizeof(pthread_t), free, NULL);
@@ -306,14 +313,28 @@ static int producer_get_frame( mlt_producer producer, mlt_frame_ptr frame, int i
     pthread_mutex_unlock(mutex);
   }
 
-  pthread_mutex_lock(mutex);
-  while(mlt_deque_count(queue) < 1) {
-    pthread_cond_wait(cond, mutex);
+  mlt_position position = mlt_producer_position( producer );
+  *frame = mlt_cache_get_frame( m_cache, position );
+
+  if (!*frame) {
+    pthread_mutex_lock(mutex);
+    while(mlt_deque_count(queue) < 1) {
+      pthread_cond_wait(cond, mutex);
+    }
+    printf("\nqueue: %d\n", mlt_deque_count(queue));
+    // Get frame from queue
+    *frame = (mlt_frame)mlt_deque_pop_front(queue);
+    pthread_mutex_unlock(mutex);
+
+    // add to cache
+    if ( *frame )
+    {
+        mlt_frame_set_position( *frame, position );
+        mlt_cache_put_frame( m_cache, *frame );
+    }
+  } else {
+    printf("\ncache hit: %d\n", position);
   }
-  printf("\nqueue: %d\n", mlt_deque_count(queue));
-  // Get frame from queue
-  *frame = (mlt_frame)mlt_deque_pop_front(queue);
-  pthread_mutex_unlock(mutex);
 
   // Get the frames properties
   mlt_properties properties = MLT_FRAME_PROPERTIES( *frame );

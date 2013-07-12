@@ -301,7 +301,9 @@ static void *consumer_thread( void *arg ) {
 
   struct timespec starttime;
   clock_gettime(CLOCK_REALTIME, &starttime);
-  uint64_t nanosec = starttime.tv_sec * 1000000000 + starttime.tv_nsec;
+  uint64_t nanosec = starttime.tv_sec;
+  nanosec *= 1000000000;
+  nanosec += starttime.tv_nsec;
 
   //uint64_t frametime = (fr_den * 1000000000) / fr_num;
   uint64_t frametime = fr_den;
