@@ -91,6 +91,9 @@ mlt_producer producer_posixshm_init( mlt_profile profile, mlt_service_type type,
     mlt_properties_set_int(properties, "meta.media.sample_aspect_den", 1);
     mlt_properties_set_int(properties, "meta.media.sample_aspect_num", 1);
 
+    mlt_properties_set_int( properties, "meta.media.progressive", profile->progressive );
+    //mlt_properties_set_int( properties, "top_field_first", m_topFieldFirst );
+    mlt_properties_set_double( properties, "aspect_ratio", mlt_profile_sar( profile ) );
     mlt_properties_set_int(properties, "meta.media.colorspace", 601 );
 
     // shared memory space properties
@@ -122,6 +125,11 @@ mlt_producer producer_posixshm_init( mlt_profile profile, mlt_service_type type,
     pthread_t *thread = malloc(sizeof(pthread_t));
     mlt_properties_set_data(properties, "_thread", thread, sizeof(pthread_t), free, NULL);
     pthread_create(thread, NULL, producer_thread, this);
+
+    // These properties effectively make it infinite.
+    mlt_properties_set_int( properties, "length", INT_MAX );
+    mlt_properties_set_int( properties, "out", INT_MAX - 1 );
+    mlt_properties_set( properties, "eof", "loop" );
 
     // If we couldn't open the file, then destroy it now
     if ( destroy ) {
@@ -311,7 +319,7 @@ static int producer_get_frame( mlt_producer producer, mlt_frame_ptr frame, int i
   mlt_properties properties = MLT_FRAME_PROPERTIES( *frame );
 
   mlt_properties_set_int( properties, "test_image", 0 );
-  //mlt_properties_set_int( properties, "test_audio", 0 );
+  mlt_properties_set_int( properties, "test_audio", 0 );
 
   // Update other info on the frame
   // TODO: ??????
