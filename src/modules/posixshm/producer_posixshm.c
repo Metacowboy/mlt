@@ -151,8 +151,11 @@ static void producer_read_frame_data(mlt_producer this, mlt_frame_ptr frame) {
   pthread_rwlock_rdlock(&control->rwlock);
 
   while(header->frame == last_frame) {
+    pthread_mutex_lock(&control->fr_mutex);
     pthread_rwlock_unlock(&control->rwlock);
+    pthread_cond_wait(&control->frame_ready, &control->fr_mutex);
     pthread_rwlock_rdlock(&control->rwlock);
+    pthread_mutex_unlock(&control->fr_mutex);
   }
 
   mlt_properties_set_int(properties, "_last_frame", header->frame);

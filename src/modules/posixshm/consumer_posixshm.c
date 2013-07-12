@@ -90,6 +90,16 @@ static void init_control(struct posixshm_control *control) {
   pthread_rwlockattr_init(&rwlock_attr);
   pthread_rwlockattr_setpshared(&rwlock_attr, PTHREAD_PROCESS_SHARED);
   pthread_rwlock_init(&control->rwlock, &rwlock_attr);
+  // init condition
+  pthread_condattr_t condattr;
+  pthread_condattr_init(&condattr);
+  pthread_condattr_setpshared(&condattr, PTHREAD_PROCESS_SHARED);
+  pthread_cond_init(&control->frame_ready, &condattr);
+  // init mutex
+  pthread_mutexattr_t mutexattr;
+  pthread_mutexattr_init(&mutexattr);
+  pthread_mutexattr_setpshared(&mutexattr, PTHREAD_PROCESS_SHARED);
+  pthread_mutex_init(&control->fr_mutex, &mutexattr);
 }
 
 static int consumer_start( mlt_consumer this ) {
@@ -260,6 +270,7 @@ static void consumer_output( mlt_consumer this, void *share, int size, mlt_frame
   memcpy(walk, audio, audio_size);
 
   pthread_rwlock_unlock(&control->rwlock);
+  pthread_cond_broadcast(&control->frame_ready);
 }
 
 /** The main thread - the argument is simply the consumer.

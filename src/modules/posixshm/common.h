@@ -6,6 +6,8 @@
 
 struct posixshm_control {
   pthread_rwlock_t rwlock;
+  pthread_cond_t frame_ready;
+  pthread_mutex_t fr_mutex; // a mutex is mandatory for condition wait
 };
 
 struct posix_shm_header {
