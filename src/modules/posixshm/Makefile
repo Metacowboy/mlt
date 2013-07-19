@@ -7,8 +7,9 @@ include ../../../config.mak
 TARGET = ../libmltposixshm$(LIBSUF)
 
 OBJS = factory.o \
-	   producer_posixshm.o \
-	   consumer_posixshm.o
+       producer_posixshm.o \
+       consumer_posixshm.o \
+       common.o
 
 SRCS := $(OBJS:.o=.c)
 
@@ -23,7 +24,7 @@ depend:	$(SRCS)
 distclean:	clean
 		rm -f .depend
 
-clean:	
+clean:
 		rm -f $(OBJS) $(TARGET)
 
 install: all

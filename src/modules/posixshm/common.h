@@ -25,4 +25,6 @@ struct posix_shm_header {
   uint32_t samples;
 };
 
+int write_log(int priority, const char *format, ...);
+
 #endif

@@ -178,8 +178,12 @@ static void producer_read_frame_data(mlt_producer this, mlt_frame_ptr frame) {
   while(header->frame == last_frame) {
     pthread_mutex_lock(&control->fr_mutex);
     pthread_rwlock_unlock(&control->rwlock);
+    write_log(1, "Waiting frame_ready!");
     pthread_cond_wait(&control->frame_ready, &control->fr_mutex);
+    write_log(1, "frame_ready signal!");
+    write_log(1, "Ask shm lock!");
     pthread_rwlock_rdlock(&control->rwlock);
+    write_log(1, "shm lock acquired!");
     pthread_mutex_unlock(&control->fr_mutex);
   }
   mlt_properties_set_int(frame_props, "_consecutive", header->frame == (last_frame + 1));
@@ -250,23 +254,28 @@ static void* producer_thread(void *arg) {
     // Sleep until buffer consumption begins
     pthread_mutex_lock(mutex);
     if (mlt_deque_count(queue) >= 25) {
+      write_log(1, "Wait buffer consumption!");
       pthread_cond_wait(cond, mutex);
+      write_log(1, "Buffer consumption started!");
     }
 
     mlt_frame frame = mlt_frame_init(MLT_PRODUCER_SERVICE(this));
     producer_read_frame_data(this, &frame);
 
     if (!mlt_properties_get_int(MLT_FRAME_PROPERTIES(frame), "_consecutive")) {
+      write_log(1, "Frame number not consecutive, flushing!");
       while (mlt_deque_count(queue)) {
         mlt_frame_close(mlt_deque_pop_front(queue));
       }
     }
 
+    write_log(1, "Push frame to queue");
     mlt_deque_push_back(queue, frame);
     pthread_cond_broadcast(cond);
     pthread_mutex_unlock(mutex);
   }
 
+  write_log(1, "Finish!");
   pthread_exit(NULL);
 }
 
@@ -333,14 +342,20 @@ static int producer_get_frame( mlt_producer producer, mlt_frame_ptr frame, int i
   *frame = mlt_cache_get_frame( m_cache, position );
 
   if (!*frame) {
+    write_log(0, "Cache miss: %d", position);
+
     // Get frame from queue
     pthread_mutex_lock(mutex);
     while(mlt_deque_count(queue) < 1) {
+      write_log(0, "Waiting buffer!");
       pthread_cond_wait(cond, mutex);
+      write_log(0, "Buffer filled!");
     }
 
+    write_log(0, "Get frame from queue!");
     *frame = (mlt_frame)mlt_deque_pop_front(queue);
     pthread_cond_broadcast(cond);
+    write_log(0, "Queue count: %d", mlt_deque_count(queue));
     pthread_mutex_unlock(mutex);
 
     /*
@@ -357,7 +372,7 @@ static int producer_get_frame( mlt_producer producer, mlt_frame_ptr frame, int i
       mlt_cache_put_frame( m_cache, *frame );
     }
   } else {
-    printf("\ncache hit: %d\n", position);
+    write_log(0, "Cache hit: %d", position);
   }
 
   // Get the frames properties
@@ -388,6 +403,8 @@ static int producer_get_frame( mlt_producer producer, mlt_frame_ptr frame, int i
 
 static void producer_close( mlt_producer this )
 {
+  write_log(0, "Closing producer");
+
   // Close the parent
   this->close = NULL;
   mlt_properties properties = MLT_PRODUCER_PROPERTIES(this);
@@ -413,4 +430,5 @@ static void producer_close( mlt_producer this )
   pthread_attr_destroy(attr);
 
   mlt_producer_close(this);
+  write_log(0, "Finish!\n");
 }
