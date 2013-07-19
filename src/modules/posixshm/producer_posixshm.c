@@ -245,21 +245,29 @@ static void* producer_thread(void *arg) {
 
   mlt_properties_set_int(properties, "_running", 1);
 
-  while( mlt_properties_get_int(properties, "_running") ) {
+  while (mlt_properties_get_int(properties, "_running")) {
+
+    // Sleep until buffer consumption begins
+    pthread_mutex_lock(mutex);
+    if (mlt_deque_count(queue) >= 25) {
+      pthread_cond_wait(cond, mutex);
+    }
+
     mlt_frame frame = mlt_frame_init(MLT_PRODUCER_SERVICE(this));
     producer_read_frame_data(this, &frame);
-    pthread_mutex_lock(mutex);
-    if(!mlt_properties_get_int(MLT_FRAME_PROPERTIES(frame), "_consecutive")) {
-      while(mlt_deque_count(queue))
-        mlt_deque_pop_front(queue);
+
+    if (!mlt_properties_get_int(MLT_FRAME_PROPERTIES(frame), "_consecutive")) {
+      while (mlt_deque_count(queue)) {
+        mlt_frame_close(mlt_deque_pop_front(queue));
+      }
     }
+
     mlt_deque_push_back(queue, frame);
-    //printf("\npushed queue: %d\n", mlt_deque_count(queue));
-    pthread_mutex_unlock(mutex);
     pthread_cond_broadcast(cond);
+    pthread_mutex_unlock(mutex);
   }
 
-  return NULL;
+  pthread_exit(NULL);
 }
 
 static int producer_get_image( mlt_frame this, uint8_t **buffer, mlt_image_format *format, int *width, int *height, int writable ) {
@@ -320,24 +328,33 @@ static int producer_get_frame( mlt_producer producer, mlt_frame_ptr frame, int i
     pthread_mutex_unlock(mutex);
   }
 
+  // Try to get frame from cache
   mlt_position position = mlt_producer_position( producer );
   *frame = mlt_cache_get_frame( m_cache, position );
 
   if (!*frame) {
+    // Get frame from queue
     pthread_mutex_lock(mutex);
     while(mlt_deque_count(queue) < 1) {
       pthread_cond_wait(cond, mutex);
     }
-    printf("\nqueue: %d\n", mlt_deque_count(queue));
-    // Get frame from queue
+
     *frame = (mlt_frame)mlt_deque_pop_front(queue);
+    pthread_cond_broadcast(cond);
     pthread_mutex_unlock(mutex);
 
-    // add to cache
+    /*
+    // Generate new frame
+    printf("\nGenerate new frame!");
+    *frame = mlt_frame_init(MLT_PRODUCER_SERVICE(producer));
+    producer_read_frame_data(producer, *frame);
+    */
+
+    // Add frame to cache
     if ( *frame )
     {
-        mlt_frame_set_position( *frame, position );
-        mlt_cache_put_frame( m_cache, *frame );
+      mlt_frame_set_position( *frame, position );
+      mlt_cache_put_frame( m_cache, *frame );
     }
   } else {
     printf("\ncache hit: %d\n", position);
