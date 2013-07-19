@@ -119,7 +119,7 @@ mlt_producer producer_posixshm_init( mlt_profile profile, mlt_service_type type,
 
     // buffer
     mlt_deque queue = mlt_deque_init();
-    mlt_properties_set_data(properties, "_queue", queue, sizeof(mlt_deque), mlt_deque_close, NULL);
+    mlt_properties_set_data(properties, "_queue", queue, sizeof(mlt_deque), (mlt_destructor)mlt_deque_close, NULL);
     mlt_properties_set_int(properties, "_buffer", 25);
     mlt_properties_set_int(properties, "_buffering", 1);
 
@@ -128,10 +128,17 @@ mlt_producer producer_posixshm_init( mlt_profile profile, mlt_service_type type,
     // 3 covers YADIF and increasing framerate use cases
     mlt_cache_set_size( m_cache, 5 );
 
-    // read frame thread
+    // Read frame thread setup and creation
     pthread_t *thread = malloc(sizeof(pthread_t));
+    pthread_attr_t *attr = malloc(sizeof(pthread_attr_t));
+
+    pthread_attr_init(attr);
+    pthread_attr_setdetachstate(attr, PTHREAD_CREATE_JOINABLE);
+
     mlt_properties_set_data(properties, "_thread", thread, sizeof(pthread_t), free, NULL);
-    pthread_create(thread, NULL, producer_thread, this);
+    mlt_properties_set_data(properties, "_thread_attr", attr, sizeof(pthread_attr_t), free, NULL);
+
+    pthread_create(thread, attr, producer_thread, this);
 
     // These properties effectively make it infinite.
     mlt_properties_set_int( properties, "length", INT_MAX );
@@ -367,11 +374,26 @@ static void producer_close( mlt_producer this )
   // Close the parent
   this->close = NULL;
   mlt_properties properties = MLT_PRODUCER_PROPERTIES(this);
-  if(mlt_properties_get_int(properties, "_running")) {
-    pthread_t *thread = mlt_properties_get_data(properties, "_thread", NULL);
+
+  if (mlt_properties_get_int(properties, "_running")) {
     mlt_properties_set_int(properties, "_running", 0);
+
+    // Wake up thread from waiting for shared memory (not solving all problems)
+    pthread_t *thread = mlt_properties_get_data(properties, "_thread", NULL);
+    pthread_mutex_t *mutex = mlt_properties_get_data(properties, "_queue_mutex", NULL);
+    pthread_cond_t  *cond  = mlt_properties_get_data(properties, "_queue_cond", NULL);
+
+    pthread_mutex_lock(mutex);
+    pthread_cond_broadcast(cond);
+    pthread_mutex_unlock(mutex);
+
     // Wait for termination
     pthread_join( *thread, NULL );
   }
+
+  // Destroy thread attributes
+  pthread_attr_t *attr = mlt_properties_get_data(properties, "_thread_attr", NULL);
+  pthread_attr_destroy(attr);
+
   mlt_producer_close(this);
 }
