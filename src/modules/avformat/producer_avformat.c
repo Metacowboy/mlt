@@ -575,10 +575,6 @@ static int get_basic_info( producer_avformat self, mlt_profile profile, const ch
 
 	AVFormatContext *format = self->video_format;
 
-	// We will treat everything with the producer fps.
-	// TODO: make this more flexible.
-	double fps = mlt_profile_fps( profile );
-
 	// Get the duration
 	if ( !mlt_properties_get_int( properties, "_length_computed" ) )
 	{
@@ -587,7 +583,9 @@ static int get_basic_info( producer_avformat self, mlt_profile profile, const ch
 		if ( format->duration != AV_NOPTS_VALUE )
 		{
 			// This isn't going to be accurate for all formats
-			mlt_position frames = ( mlt_position )( ( ( double )format->duration / ( double )AV_TIME_BASE ) * fps );
+			// We will treat everything with the producer fps.
+			mlt_position frames = ( mlt_position )( int )( format->duration *
+				profile->frame_rate_num / profile->frame_rate_den / AV_TIME_BASE);
 			mlt_properties_set_position( properties, "out", frames - 1 );
 			mlt_properties_set_position( properties, "length", frames );
 			mlt_properties_set_int( properties, "_length_computed", 1 );
@@ -2010,6 +2008,20 @@ static int sample_bytes( AVCodecContext *context )
 #endif
 }
 
+#if LIBAVCODEC_VERSION_MAJOR >= 55
+static void planar_to_interleaved( uint8_t *dest, AVFrame *src, int samples, int channels, int bytes_per_sample )
+{
+	int s, c;
+	for ( s = 0; s < samples; s++ )
+	{
+		for ( c = 0; c < channels; c++ )
+		{
+			memcpy( dest, &src->data[c][s * bytes_per_sample], bytes_per_sample );
+			dest += bytes_per_sample;
+		}
+	}
+}
+#else
 static void planar_to_interleaved( uint8_t *dest, uint8_t *src, int samples, int channels, int bytes_per_sample )
 {
 	int s, c;
@@ -2022,19 +2034,7 @@ static void planar_to_interleaved( uint8_t *dest, uint8_t *src, int samples, int
 		}
 	}
 }
-
-static void planar_to_interleaved2( uint8_t *dest, AVFrame *src, int samples, int channels, int bytes_per_sample )
-{
-	int s, c;
-	for ( s = 0; s < samples; s++ )
-	{
-		for ( c = 0; c < channels; c++ )
-		{
-			memcpy( dest, &src->data[c][s * bytes_per_sample], bytes_per_sample );
-			dest += bytes_per_sample;
-		}
-	}
-}
+#endif
 
 static int decode_audio( producer_avformat self, int *ignore, AVPacket pkt, int channels, int samples, double timecode, double fps )
 {
@@ -2106,7 +2106,7 @@ static int decode_audio( producer_avformat self, int *ignore, AVPacket pkt, int 
 			case AV_SAMPLE_FMT_S32P:
 			case AV_SAMPLE_FMT_FLTP:
 #if LIBAVCODEC_VERSION_MAJOR >= 55
-				planar_to_interleaved2( dest, self->audio_frame, convert_samples, codec_context->channels, sizeof_sample );
+				planar_to_interleaved( dest, self->audio_frame, convert_samples, codec_context->channels, sizeof_sample );
 #else
 				planar_to_interleaved( dest, decode_buffer, convert_samples, codec_context->channels, sizeof_sample );
 #endif
@@ -2209,8 +2209,8 @@ static int producer_get_audio( mlt_frame frame, void **buffer, mlt_audio_format 
 		index = 0;
 		index_max = FFMIN( MAX_AUDIO_STREAMS, context->nb_streams );
 		*channels = self->total_channels;
-		*samples = mlt_sample_calculator( fps, FFMAX( self->max_frequency, *frequency ), position );
-		*frequency = FFMAX( self->max_frequency, *frequency );
+		*samples = mlt_sample_calculator( fps, self->max_frequency, position );
+		*frequency = self->max_frequency;
 	}
 
 	// Initialize the buffers

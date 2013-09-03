@@ -1070,10 +1070,12 @@ mlt_frame mlt_frame_clone( mlt_frame self, int is_deep )
 		data = mlt_properties_get_data( properties, "image", &size );
 		if ( data )
 		{
+			int width = mlt_properties_get_int( properties, "width" );
+			int height = mlt_properties_get_int( properties, "height" );
+
 			if ( ! size )
 				size = mlt_image_format_size( mlt_properties_get_int( properties, "format" ),
-					mlt_properties_get_int( properties, "width" ),
-					mlt_properties_get_int( properties, "height" ), NULL );
+					width, height, NULL );
 			copy = mlt_pool_alloc( size );
 			memcpy( copy, data, size );
 			mlt_properties_set_data( new_props, "image", copy, size, mlt_pool_release, NULL );
@@ -1082,8 +1084,7 @@ mlt_frame mlt_frame_clone( mlt_frame self, int is_deep )
 			if ( data )
 			{
 				if ( ! size )
-					size = mlt_properties_get_int( properties, "width" ) *
-						mlt_properties_get_int( properties, "height" );
+					size = width * height;
 				copy = mlt_pool_alloc( size );
 				memcpy( copy, data, size );
 				mlt_properties_set_data( new_props, "alpha", copy, size, mlt_pool_release, NULL );

@@ -1178,7 +1178,7 @@ static void *consumer_thread( void *arg )
 	int count = 0;
 
 	// Allocate the context
-	AVFormatContext *oc = avformat_alloc_context( );
+	AVFormatContext *oc = NULL;
 
 	// Streams
 	AVStream *video_st = NULL;
@@ -1231,6 +1231,22 @@ static void *consumer_thread( void *arg )
 	// We need a filename - default to stdout?
 	if ( filename == NULL || !strcmp( filename, "" ) )
 		filename = "pipe:";
+
+#if LIBAVUTIL_VERSION_INT >= ((53<<16)+(2<<8)+0)
+	avformat_alloc_output_context2( &oc, fmt, format, filename );
+#else
+	oc = avformat_alloc_context( );
+	oc->oformat = fmt;
+	snprintf( oc->filename, sizeof(oc->filename), "%s", filename );
+
+	if ( oc->oformat && oc->oformat->priv_class && !oc->priv_data && oc->oformat->priv_data_size ) {
+		oc->priv_data = av_mallocz( oc->oformat->priv_data_size );
+		if ( oc->priv_data ) {
+			*(const AVClass**)oc->priv_data = oc->oformat->priv_class;
+			av_opt_set_defaults( oc->priv_data );
+		}
+	}
+#endif
 
 	// Get the codec ids selected
 	audio_codec_id = fmt->audio_codec;
@@ -1309,9 +1325,6 @@ static void *consumer_thread( void *arg )
 			free( key );
 		}
 	}
-
-	oc->oformat = fmt;
-	snprintf( oc->filename, sizeof(oc->filename), "%s", filename );
 
 	// Get a frame now, so we can set some AVOptions from properties.
 	frame = mlt_consumer_rt_frame( consumer );
@@ -1480,7 +1493,7 @@ static void *consumer_thread( void *arg )
 	if ( video_st )
 		converted_avframe = alloc_picture( video_st->codec->pix_fmt, width, height );
 
-#if LIBAVCODEC_VERSION_MAJOR >= 55
+#if LIBAVCODEC_VERSION_MAJOR >= 54
 	// Allocate audio AVFrame
 	if ( audio_st[0] )
 	{
@@ -1613,7 +1626,7 @@ static void *consumer_thread( void *arg )
 							else if ( codec->sample_fmt == AV_SAMPLE_FMT_U8P )
 								p = interleaved_to_planar( samples, channels, p, sizeof( uint8_t ) );
 #endif
-#if LIBAVCODEC_VERSION_MAJOR >= 55
+#if LIBAVCODEC_VERSION_MAJOR >= 54
 							audio_avframe->nb_samples = FFMAX( samples, audio_input_nb_samples );
 							if ( audio_codec_id == AV_CODEC_ID_VORBIS )
 								audio_avframe->pts = synth_audio_pts;
@@ -1703,7 +1716,7 @@ static void *consumer_thread( void *arg )
 									dest_offset += current_channels;
 								}
 							}
-#if LIBAVCODEC_VERSION_MAJOR >= 55
+#if LIBAVCODEC_VERSION_MAJOR >= 54
 							audio_avframe->nb_samples = FFMAX( samples, audio_input_nb_samples );
 							if ( audio_codec_id == AV_CODEC_ID_VORBIS )
 								audio_avframe->pts = synth_audio_pts;
@@ -2013,7 +2026,7 @@ static void *consumer_thread( void *arg )
 				else if ( c->sample_fmt == AV_SAMPLE_FMT_U8P )
 					p = interleaved_to_planar( audio_input_nb_samples, channels, p, sizeof( uint8_t ) );
 #endif
-#if LIBAVCODEC_VERSION_MAJOR >= 55
+#if LIBAVCODEC_VERSION_MAJOR >= 54
 				pkt.size = audio_outbuf_size;
 				audio_avframe->nb_samples = FFMAX( samples / channels, audio_input_nb_samples );
 				if ( audio_codec_id == AV_CODEC_ID_VORBIS )
@@ -2041,7 +2054,7 @@ static void *consumer_thread( void *arg )
 			{
 				// Drain the codec
 				if ( pkt.size <= 0 ) {
-#if LIBAVCODEC_VERSION_MAJOR >= 55
+#if LIBAVCODEC_VERSION_MAJOR >= 54
 					pkt.size = audio_outbuf_size;
 					int got_packet = 0;
 					int ret = avcodec_encode_audio2( c, &pkt, NULL, &got_packet );
@@ -2200,6 +2213,18 @@ on_fatal_error:
 		free( full );
 		free( cwd );
 		remove( "x264_2pass.log.temp" );
+
+		// Recent versions of libavcodec/x264 support passlogfile and need cleanup if specified.
+		if ( !mlt_properties_get( properties, "_logfilename" ) &&
+		      mlt_properties_get( properties, "passlogfile" ) )
+		{
+			file = mlt_properties_get( properties, "passlogfile" );
+			remove( file );
+			full = malloc( strlen( file ) + strlen( ".mbtree" ) + 1 );
+			sprintf( full, "%s.mbtree", file );
+			remove( full );
+			free( full );
+		}
 	}
 
 	while ( ( frame = mlt_deque_pop_back( queue ) ) )
