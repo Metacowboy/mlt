@@ -29,6 +29,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <errno.h>
 
 #include "common.h"
 
@@ -145,13 +146,24 @@ static int consumer_start( mlt_consumer this ) {
        run with different users */
 
     // create shared memory
-    int shareId = shm_open(sharedKey, O_RDWR | O_CREAT, 0666);
+    int shareId = shm_open(sharedKey, O_RDWR | O_CREAT | O_EXCL, 0666);
+    int need_init = 1;
+    if(shareId < 0) {
+      if( errno == EEXIST) {
+        // don't init objects
+        need_init = 0;
+        shareId = shm_open(sharedKey, O_RDWR, 0666);
+      }
+    } else {
+      // do.. stuff?
+    }
     ftruncate(shareId, memsize);
     void *share = mmap(NULL, memsize, PROT_READ | PROT_WRITE, MAP_SHARED, shareId, 0);
 
     // create semaphore
     struct posixshm_control *control = (struct posixshm_control*)share;
-    init_control(control);
+    if(need_init)
+      init_control(control, memsize);
 
     close(shareId);
 
