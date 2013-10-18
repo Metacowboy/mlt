@@ -68,6 +68,7 @@ mlt_producer producer_posixshm_init( mlt_profile profile, mlt_service_type type,
     struct stat filestat;
     fstat(shareId, &filestat);
     off_t memsize = filestat.st_size;
+    mlt_properties_set_int(properties, "_memsize", memsize);
     void *share = mmap(NULL, memsize, PROT_READ | PROT_WRITE, MAP_SHARED, shareId, 0);
 
     // I'm done with the file descriptor

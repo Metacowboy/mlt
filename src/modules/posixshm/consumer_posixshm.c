@@ -85,7 +85,7 @@ mlt_consumer consumer_posixshm_init( mlt_profile profile, mlt_service_type type,
 /** Start the consumer.
  */
 
-static void init_control(struct posixshm_control *control) {
+static void init_control(struct posixshm_control *control, uint32_t memsize) {
   // init lock
   pthread_rwlockattr_t rwlock_attr;
   pthread_rwlockattr_init(&rwlock_attr);
@@ -162,6 +162,8 @@ static int consumer_start( mlt_consumer this ) {
 
     // create semaphore
     struct posixshm_control *control = (struct posixshm_control*)share;
+    //
+    control->size = memsize;
     if(need_init)
       init_control(control, memsize);
 
