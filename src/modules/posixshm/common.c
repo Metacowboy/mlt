@@ -7,6 +7,8 @@
 #define ANSI_COLOR_MAGENTA "\x1b[35m"
 #define ANSI_COLOR_CYAN    "\x1b[36m"
 #define ANSI_COLOR_RESET   "\x1b[0m"
+#define GET_COLOR(x) (x == 0 ? ANSI_COLOR_BLUE : (x == 1 ? ANSI_COLOR_GREEN : (x == 2 ? ANSI_COLOR_MAGENTA : ANSI_COLOR_YELLOW)))
+#define GET_DESC(x) (x == 0 ? "  ROOT" : "THREAD")
 #define DEBUG 1
 
 int write_log(int thread, const char *format, ...)
@@ -16,12 +18,7 @@ int write_log(int thread, const char *format, ...)
   va_list args;
   va_start(args, format);
 
-  if (thread) {
-    printf("\n" ANSI_COLOR_GREEN "THREAD %d: " ANSI_COLOR_RESET, thread);
-  } else {
-    printf("\n" ANSI_COLOR_BLUE "ROOT: " ANSI_COLOR_RESET);
-  }
-
+  printf("\n%s%s: " ANSI_COLOR_RESET, GET_COLOR(thread), GET_DESC(thread));
   vprintf(format, args);
 
   va_end(args);

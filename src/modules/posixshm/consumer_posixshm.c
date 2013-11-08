@@ -32,11 +32,14 @@
 
 #include "common.h"
 
+#define BUFFER_SIZE 25
+
 // Forward references.
 static int consumer_start( mlt_consumer this );
 static int consumer_stop( mlt_consumer this );
 static int consumer_is_stopped( mlt_consumer this );
 static void consumer_output( mlt_consumer this, void *share, int size, mlt_frame frame );
+static void *frame_fetching_thread( void *arg );
 static void *consumer_thread( void *arg );
 static void consumer_close( mlt_consumer this );
 
@@ -100,6 +103,16 @@ static void init_control(struct posixshm_control *control) {
   pthread_mutexattr_init(&mutexattr);
   pthread_mutexattr_setpshared(&mutexattr, PTHREAD_PROCESS_SHARED);
   pthread_mutex_init(&control->fr_mutex, &mutexattr);
+  // init condition
+  pthread_condattr_t condattr2;
+  pthread_condattr_init(&condattr2);
+  pthread_condattr_setpshared(&condattr2, PTHREAD_PROCESS_SHARED);
+  pthread_cond_init(&control->frame_consumed, &condattr2);
+  // init mutex
+  pthread_mutexattr_t mutexattr2;
+  pthread_mutexattr_init(&mutexattr2);
+  pthread_mutexattr_setpshared(&mutexattr2, PTHREAD_PROCESS_SHARED);
+  pthread_mutex_init(&control->fc_mutex, &mutexattr2);
 }
 
 static int consumer_start( mlt_consumer this ) {
@@ -165,16 +178,32 @@ static int consumer_start( mlt_consumer this ) {
     mlt_properties_set_data(properties, "_writespace", share + sizeof(struct posixshm_control),
                             memsize - sizeof(struct posixshm_control), NULL, NULL);
 
-    // Allocate a thread
+
+    // Buffer mutex
+    pthread_mutex_t *mutex = malloc(sizeof(pthread_mutex_t));
+    pthread_mutex_init(mutex, NULL);
+    mlt_properties_set_data(properties, "_queue_mutex", mutex, sizeof(pthread_mutex_t), free, NULL);
+    pthread_cond_t *cond = malloc(sizeof(pthread_cond_t));
+    pthread_cond_init(cond, NULL);
+    mlt_properties_set_data(properties, "_queue_cond", cond, sizeof(pthread_cond_t), free, NULL);
+
+    // Buffer
+    mlt_deque queue = mlt_deque_init();
+    mlt_properties_set_data(properties, "_queue", queue, sizeof(mlt_deque), (mlt_destructor)mlt_deque_close, NULL);
+
+    // Allocate two threads
+    pthread_t *buffer_thread = calloc( 1, sizeof( pthread_t ) );
     pthread_t *thread = calloc( 1, sizeof( pthread_t ) );
 
-    // Assign the thread to properties
+    // Assign threads to properties
     mlt_properties_set_data( properties, "thread", thread, sizeof( pthread_t ), free, NULL );
+    mlt_properties_set_data( properties, "buffer_thread", buffer_thread, sizeof( pthread_t ), free, NULL );
 
     // Set the running state
     mlt_properties_set_int( properties, "running", 1 );
 
-    // Create the thread
+    // Create threads
+    pthread_create( buffer_thread, NULL, frame_fetching_thread, this );
     pthread_create( thread, NULL, consumer_thread, this );
   }
 
@@ -191,17 +220,34 @@ static int consumer_stop( mlt_consumer this )
 
   // Check that we're running
   if ( mlt_properties_get_int( properties, "running" ) )
-    {
-      // Get the thread
-      pthread_t *thread = mlt_properties_get_data( properties, "thread", NULL );
+  {
+    // Stop the thread
+    mlt_properties_set_int( properties, "running", 0 );
 
-      // Stop the thread
-      mlt_properties_set_int( properties, "running", 0 );
+    // Wake up thread from waiting for shared memory (not solving all problems)
+    pthread_mutex_t *mutex = mlt_properties_get_data(properties, "_queue_mutex", NULL);
+    pthread_cond_t  *cond  = mlt_properties_get_data(properties, "_queue_cond", NULL);
 
-      // Wait for termination
-      pthread_join( *thread, NULL );
-    }
+    pthread_mutex_lock(mutex);
+    pthread_cond_broadcast(cond);
+    pthread_mutex_unlock(mutex);
 
+    struct posixshm_control *control = mlt_properties_get_data(properties, "_control", NULL);
+
+    pthread_mutex_lock(&control->fc_mutex);
+    pthread_cond_broadcast(&control->frame_consumed);
+    pthread_mutex_unlock(&control->fc_mutex);
+
+    // Get the thread
+    pthread_t *thread = mlt_properties_get_data( properties, "thread", NULL );
+    pthread_t *buffer_thread = mlt_properties_get_data( properties, "buffer_thread", NULL );
+
+    // Wait for termination
+    pthread_join( *buffer_thread, NULL );
+    pthread_join( *thread, NULL );
+  }
+
+  write_log(0, "Stopped!\n");
   return 0;
 }
 
@@ -247,7 +293,7 @@ static void consumer_output( mlt_consumer this, void *share, int size, mlt_frame
   header->image_format = ifmt;
   header->width = width;
   header->height = height;
-  
+
   memcpy(walk, image, image_size);
   walk += image_size;
 
@@ -266,22 +312,97 @@ static void consumer_output( mlt_consumer this, void *share, int size, mlt_frame
   header->frequency = frequency;
   header->channels = channels;
   header->samples = samples;
-  
+
   memcpy(walk, audio, audio_size);
 
   pthread_rwlock_unlock(&control->rwlock);
   pthread_cond_broadcast(&control->frame_ready);
 }
 
-/** The main thread - the argument is simply the consumer.
+/** The frame fetching thread
  */
 
-static void *consumer_thread( void *arg ) {
+static void *frame_fetching_thread( void *arg ) {
+  write_log(1, "Fetching thread started!");
+
   // Map the argument to the object
   mlt_consumer this = arg;
 
   // Get the properties
   mlt_properties properties = MLT_CONSUMER_PROPERTIES( this );
+
+  // Get buffer and control structures
+  mlt_deque queue = mlt_properties_get_data(properties, "_queue", NULL);
+  pthread_mutex_t *mutex = mlt_properties_get_data(properties, "_queue_mutex", NULL);
+  pthread_cond_t  *cond  = mlt_properties_get_data(properties, "_queue_cond", NULL);
+
+  // Frame and size
+  mlt_frame frame = NULL;
+  int last_position = -1;
+
+  // shared memory info
+  int size = 0;
+  uint8_t *share = mlt_properties_get_data(properties, "_writespace", &size);
+
+  // Loop while running
+  while ( mlt_properties_get_int( properties, "running" ) ) {
+
+    // Sleep until buffer consumption begins
+    pthread_mutex_lock(mutex);
+    if (mlt_deque_count(queue) >= BUFFER_SIZE) {
+      write_log(1, "Wait buffer consumption!");
+      pthread_cond_wait(cond, mutex);
+      write_log(1, "Buffer consumption started!");
+    }
+
+    // Double check termination
+    if ( !mlt_properties_get_int( properties, "running" ) ) {
+      break;
+    }
+
+    // Get the frame
+    frame = mlt_consumer_rt_frame( this );
+
+    // Check consecutive frame
+    if (mlt_frame_get_position(frame) != last_position + 1) {
+      write_log(1, "Frame number not consecutive, flushing!");
+      while (mlt_deque_count(queue)) {
+        mlt_frame_close(mlt_deque_pop_front(queue));
+      }
+    }
+    last_position = mlt_frame_get_position(frame);
+
+    write_log(1, "Push frame to queue");
+    mlt_deque_push_back(queue, frame);
+    pthread_cond_broadcast(cond);
+    pthread_mutex_unlock(mutex);
+  }
+
+  write_log(1, "Finish!");
+  pthread_exit(NULL);
+}
+
+/** The main thread - the argument is simply the consumer.
+ */
+
+static void *consumer_thread( void *arg ) {
+  write_log(2, "Consumer thread started!");
+
+  // Map the argument to the object
+  mlt_consumer this = arg;
+
+  // Get the properties
+  mlt_properties properties = MLT_CONSUMER_PROPERTIES( this );
+
+  // Get the wait flags
+  int real_time = mlt_properties_get_int(properties, "step_realtime");
+  int sync = mlt_properties_get_int(properties, "step_sync");
+
+  // Get buffer and control structures
+  mlt_deque queue = mlt_properties_get_data(properties, "_queue", NULL);
+  struct posixshm_control *control = mlt_properties_get_data(properties, "_control", NULL);
+  pthread_mutex_t *mutex = mlt_properties_get_data(properties, "_queue_mutex", NULL);
+  pthread_cond_t  *cond  = mlt_properties_get_data(properties, "_queue_cond", NULL);
 
   // Get the terminate_on_pause property
   int top = mlt_properties_get_int( properties, "terminate_on_pause" );
@@ -295,25 +416,61 @@ static void *consumer_thread( void *arg ) {
   // shared memory info
   int size = 0;
   uint8_t *share = mlt_properties_get_data(properties, "_writespace", &size);
-  int fr_den = mlt_properties_get_int(properties, "frame_rate_den");
-  int fr_num = mlt_properties_get_int(properties, "frame_rate_num");
+
+  // Time info
+  uint64_t frametime;
+  uint64_t nanosec;
   struct timespec sleeptime;
+  if (real_time) {
+    int fr_den = mlt_properties_get_int(properties, "frame_rate_den");
+    int fr_num = mlt_properties_get_int(properties, "frame_rate_num");
 
-  struct timespec starttime;
-  clock_gettime(CLOCK_REALTIME, &starttime);
-  uint64_t nanosec = starttime.tv_sec;
-  nanosec *= 1000000000;
-  nanosec += starttime.tv_nsec;
+    struct timespec starttime;
+    clock_gettime(CLOCK_REALTIME, &starttime);
+    nanosec = starttime.tv_sec;
+    nanosec *= 1000000000;
+    nanosec += starttime.tv_nsec;
+    //printf("\nnanosec: %llu\n", nanosec);
 
-  //uint64_t frametime = (fr_den * 1000000000) / fr_num;
-  uint64_t frametime = fr_den;
-  frametime *= 1000000000;
-  frametime /= fr_num;
+    frametime = fr_den;
+    frametime *= 1000000000;
+    frametime /= fr_num;
+    //frametime -= 10000000; // Wait 10ms less than required
+    //printf("\nframetime: %lld\n", frametime);
+  }
 
   // Loop while running
   while( mlt_properties_get_int( properties, "running" ) ) {
-    // Get the frame
-    frame = mlt_consumer_rt_frame( this );
+    if (sync) {
+      pthread_mutex_lock(&control->fc_mutex);
+      write_log(2, "Waiting frame_consumed!");
+      pthread_cond_wait(&control->frame_consumed, &control->fc_mutex);
+      write_log(2, "frame_consumed signal!");
+    }
+
+    // Double check termination
+    if ( !mlt_properties_get_int( properties, "running" ) ) {
+      break;
+    }
+
+    // Get frame from queue
+    pthread_mutex_lock(mutex);
+    while(mlt_deque_count(queue) < 1) {
+      write_log(2, "Waiting buffer!");
+      pthread_cond_wait(cond, mutex);
+      write_log(2, "Buffer filled!");
+    }
+
+    // Double check termination
+    if ( !mlt_properties_get_int( properties, "running" ) ) {
+      break;
+    }
+
+    write_log(2, "Get frame from queue!");
+    frame = mlt_deque_pop_front(queue);
+    pthread_cond_broadcast(cond);
+    write_log(2, "Queue count: %d", mlt_deque_count(queue));
+    pthread_mutex_unlock(mutex);
 
     // Check that we have a frame to work with
     if ( frame != NULL ) {
@@ -322,19 +479,26 @@ static void *consumer_thread( void *arg ) {
         mlt_frame_close( frame );
         break;
       }
+      if (real_time) {
+        nanosec += frametime;
+        write_log(2, "Adjusting time!");
+        sleeptime.tv_sec = nanosec / 1000000000;
+        sleeptime.tv_nsec = nanosec % 1000000000;
+        clock_nanosleep(CLOCK_REALTIME, TIMER_ABSTIME, &sleeptime, NULL);
+      }
       output( this, share, size, frame );
       mlt_events_fire( properties, "consumer-frame-show", frame, NULL );
       mlt_frame_close(frame);
     }
-    nanosec += frametime;
-    sleeptime.tv_sec = nanosec / 1000000000;
-    sleeptime.tv_nsec = nanosec % 1000000000;
-    clock_nanosleep(CLOCK_REALTIME, TIMER_ABSTIME, &sleeptime, NULL);
+
+    if (sync) {
+      pthread_mutex_unlock(&control->fc_mutex);
+    }
   }
 
   mlt_consumer_stopped( this );
-
-  return NULL;
+  pthread_exit(NULL);
+  write_log(2, "Finished!\n");
 }
 
 /** Close the consumer.
@@ -345,9 +509,10 @@ static void consumer_close( mlt_consumer this )
 
   // Stop the consumer
   mlt_consumer_stop( this );
-  
+
   // Close the parent
   mlt_consumer_close( this );
 
   write_log(0, "Finish!\n");
 }
+

@@ -34,9 +34,13 @@
 
 #include "common.h"
 
+#define BUFFER_SIZE 25
+
 static int producer_get_frame( mlt_producer parent, mlt_frame_ptr frame, int index );
 static void producer_close( mlt_producer parent );
 static void* producer_thread(void *arg);
+void restart_buffer(mlt_producer this, mlt_deque* queue);
+static void* buffer_delete_thread(void *arg);
 static mlt_cache m_cache;
 
 mlt_producer producer_posixshm_init( mlt_profile profile, mlt_service_type type, const char *id, char *source ) {
@@ -116,11 +120,16 @@ mlt_producer producer_posixshm_init( mlt_profile profile, mlt_service_type type,
     pthread_cond_t *cond = malloc(sizeof(pthread_cond_t));
     pthread_cond_init(cond, NULL);
     mlt_properties_set_data(properties, "_queue_cond", cond, sizeof(pthread_cond_t), free, NULL);
+    pthread_mutex_t *del_mutex = malloc(sizeof(pthread_mutex_t));
+    pthread_mutex_init(del_mutex, NULL);
+    mlt_properties_set_data(properties, "_queue_delete_mutex", del_mutex, sizeof(pthread_mutex_t), free, NULL);
+    pthread_cond_t *del_cond = malloc(sizeof(pthread_cond_t));
+    pthread_cond_init(del_cond, NULL);
+    mlt_properties_set_data(properties, "_queue_delete_cond", del_cond, sizeof(pthread_cond_t), free, NULL);
 
     // buffer
-    mlt_deque queue = mlt_deque_init();
-    mlt_properties_set_data(properties, "_queue", queue, sizeof(mlt_deque), (mlt_destructor)mlt_deque_close, NULL);
-    mlt_properties_set_int(properties, "_buffer", 25);
+    restart_buffer(this, NULL);
+    mlt_properties_set_int(properties, "_buffer", BUFFER_SIZE);
     mlt_properties_set_int(properties, "_buffering", 1);
 
     // Cache
@@ -129,16 +138,26 @@ mlt_producer producer_posixshm_init( mlt_profile profile, mlt_service_type type,
     mlt_cache_set_size( m_cache, 5 );
 
     // Read frame thread setup and creation
-    pthread_t *thread = malloc(sizeof(pthread_t));
     pthread_attr_t *attr = malloc(sizeof(pthread_attr_t));
-
     pthread_attr_init(attr);
     pthread_attr_setdetachstate(attr, PTHREAD_CREATE_JOINABLE);
-
-    mlt_properties_set_data(properties, "_thread", thread, sizeof(pthread_t), free, NULL);
     mlt_properties_set_data(properties, "_thread_attr", attr, sizeof(pthread_attr_t), free, NULL);
 
+    pthread_t *thread = malloc(sizeof(pthread_t));
+    mlt_properties_set_data(properties, "_thread", thread, sizeof(pthread_t), free, NULL);
+
     pthread_create(thread, attr, producer_thread, this);
+
+    // Delete buffer thread creation
+    pthread_attr_t *del_attr = malloc(sizeof(pthread_attr_t));
+    pthread_attr_init(del_attr);
+    pthread_attr_setdetachstate(del_attr, PTHREAD_CREATE_JOINABLE);
+    mlt_properties_set_data(properties, "_thread_attr", del_attr, sizeof(pthread_attr_t), free, NULL);
+
+    pthread_t *del_thread = malloc(sizeof(pthread_t));
+    mlt_properties_set_data(properties, "_del_thread", del_thread, sizeof(pthread_t), free, NULL);
+
+    pthread_create(del_thread, del_attr, buffer_delete_thread, this);
 
     // These properties effectively make it infinite.
     mlt_properties_set_int( properties, "length", INT_MAX );
@@ -157,6 +176,73 @@ mlt_producer producer_posixshm_init( mlt_profile profile, mlt_service_type type,
 
   free( this );
   return NULL;
+}
+
+void restart_buffer(mlt_producer this, mlt_deque* queue) {
+  // Get props
+  mlt_properties properties = MLT_PRODUCER_PROPERTIES( this );
+
+  // Create new buffer
+  mlt_deque new_queue = mlt_deque_init();
+  mlt_properties_set_data(properties, "_queue", new_queue, sizeof(mlt_deque), (mlt_destructor)mlt_deque_close, NULL);
+
+  if (queue) {
+    // If old buffer has been provided, save it for deletion
+    mlt_deque old_queue = *queue;
+
+    // Update pointer to new queue
+    queue = &new_queue;
+
+    // And signal delete thread
+    pthread_mutex_t *del_mutex = mlt_properties_get_data(properties, "_queue_delete_mutex", NULL);
+    pthread_cond_t  *del_cond  = mlt_properties_get_data(properties, "_queue_delete_cond", NULL);
+    write_log(0, "Seting _delete_queue as %x", old_queue);
+    mlt_properties_set_data(properties, "_delete_queue", old_queue, sizeof(mlt_deque), (mlt_destructor)mlt_deque_close, NULL);
+    pthread_mutex_lock(del_mutex);
+    pthread_cond_signal(del_cond);
+    pthread_mutex_unlock(del_mutex);
+  } else {
+    write_log(0, "Seting _delete_queue as %x", NULL);
+    mlt_properties_set_data(properties, "_delete_queue", NULL, 0, NULL, NULL);
+  }
+}
+
+static void* buffer_delete_thread(void *arg) {
+  // Init thread
+  mlt_producer this = arg;
+  mlt_properties properties = MLT_PRODUCER_PROPERTIES(this);
+  pthread_mutex_t *del_mutex = mlt_properties_get_data(properties, "_queue_delete_mutex", NULL);
+  pthread_cond_t  *del_cond  = mlt_properties_get_data(properties, "_queue_delete_cond", NULL);
+  mlt_deque* del_queue = NULL;
+
+  write_log(2, "Delete thread running!");
+
+  while ( mlt_properties_get_int(properties, "_running") == 0 ) {
+    pthread_mutex_lock(del_mutex);
+    while (del_queue == NULL) {
+      // Wait and fetch buffer for deletion
+      pthread_cond_wait(del_cond, del_mutex);
+      write_log(2, "Buffer delete signal!");
+      del_queue = (mlt_deque*)mlt_properties_get_data(properties, "_delete_queue", NULL);
+      write_log(2, "del_queue addr: %x", del_queue);
+    }
+
+    // Remove and close frames from buffer
+    write_log(2, "Removing frames!");
+    while ( mlt_deque_count(*del_queue) ) {
+      mlt_frame_close(mlt_deque_pop_front(*del_queue));
+    }
+
+    // Close buffer, remove references
+    write_log(2, "Closing buffer!");
+    mlt_deque_close(*del_queue);
+    write_log(2, "Seting _delete_queue as %x", NULL);
+    mlt_properties_set_data(properties, "_delete_queue", NULL, 0, NULL, NULL);
+    del_queue = NULL;
+  }
+
+  write_log(2, "Finish!");
+  pthread_exit(NULL);
 }
 
 static void producer_read_frame_data(mlt_producer this, mlt_frame_ptr frame) {
@@ -184,7 +270,6 @@ static void producer_read_frame_data(mlt_producer this, mlt_frame_ptr frame) {
     write_log(1, "Ask shm lock!");
     pthread_rwlock_rdlock(&control->rwlock);
     write_log(1, "shm lock acquired!");
-    pthread_mutex_unlock(&control->fr_mutex);
   }
   mlt_properties_set_int(frame_props, "_consecutive", header->frame == (last_frame + 1));
   mlt_properties_set_int(properties, "_last_frame", header->frame);
@@ -215,6 +300,8 @@ static void producer_read_frame_data(mlt_producer this, mlt_frame_ptr frame) {
 
   // release read image lock
   pthread_rwlock_unlock(&control->rwlock);
+  pthread_mutex_unlock(&control->fr_mutex);
+  pthread_cond_broadcast(&control->frame_consumed);
 
   mlt_profile profile = mlt_service_profile( MLT_PRODUCER_SERVICE(this) );
 
@@ -253,26 +340,26 @@ static void* producer_thread(void *arg) {
 
     // Sleep until buffer consumption begins
     pthread_mutex_lock(mutex);
-    if (mlt_deque_count(queue) >= 25) {
+    if (mlt_deque_count(queue) >= BUFFER_SIZE) {
       write_log(1, "Wait buffer consumption!");
       pthread_cond_wait(cond, mutex);
       write_log(1, "Buffer consumption started!");
     }
 
+    // Init frame and read data from shared memory
     mlt_frame frame = mlt_frame_init(MLT_PRODUCER_SERVICE(this));
     producer_read_frame_data(this, &frame);
 
+    // Modify queue based on new frame data
     if (!mlt_properties_get_int(MLT_FRAME_PROPERTIES(frame), "_consecutive")) {
       write_log(1, "Frame number not consecutive, flushing!");
-      while (mlt_deque_count(queue)) {
-        mlt_frame_close(mlt_deque_pop_front(queue));
-      }
+      restart_buffer(this, &queue);
     }
 
     write_log(1, "Push frame to queue");
     mlt_deque_push_back(queue, frame);
-    pthread_cond_broadcast(cond);
     pthread_mutex_unlock(mutex);
+    pthread_cond_broadcast(cond);
   }
 
   write_log(1, "Finish!");
@@ -327,6 +414,7 @@ static int producer_get_frame( mlt_producer producer, mlt_frame_ptr frame, int i
   int frn = mlt_properties_get_int(prod_props, "meta.media.frame_rate_num");
   int frd = mlt_properties_get_int(prod_props, "meta.media.frame_rate_den");
 
+  /*
   if(buffering) {
     mlt_properties_set_int(prod_props, "_buffering", 0);
     int buffer = mlt_properties_get_int(prod_props, "_buffer");
@@ -336,6 +424,7 @@ static int producer_get_frame( mlt_producer producer, mlt_frame_ptr frame, int i
     }
     pthread_mutex_unlock(mutex);
   }
+  */
 
   // Try to get frame from cache
   mlt_position position = mlt_producer_position( producer );
@@ -354,9 +443,9 @@ static int producer_get_frame( mlt_producer producer, mlt_frame_ptr frame, int i
 
     write_log(0, "Get frame from queue!");
     *frame = (mlt_frame)mlt_deque_pop_front(queue);
-    pthread_cond_broadcast(cond);
     write_log(0, "Queue count: %d", mlt_deque_count(queue));
     pthread_mutex_unlock(mutex);
+    pthread_cond_broadcast(cond);
 
     /*
     // Generate new frame
@@ -420,6 +509,12 @@ static void producer_close( mlt_producer this )
     pthread_mutex_lock(mutex);
     pthread_cond_broadcast(cond);
     pthread_mutex_unlock(mutex);
+
+    struct posixshm_control *control = mlt_properties_get_data(properties, "_control", NULL);
+
+    pthread_mutex_lock(&control->fr_mutex);
+    pthread_cond_broadcast(&control->frame_ready);
+    pthread_mutex_unlock(&control->fr_mutex);
 
     // Wait for termination
     pthread_join( *thread, NULL );
