@@ -1,0 +1,22 @@
+schema_version: 0.1
+type: producer
+identifier: gstshm
+title: gstshm
+version: 1
+copyright: OpCode
+creator: Tomas Neme, Adrián Pardini
+license: LGPLv2.1
+language: en
+tags:
+  - Audio
+  - Video
+description: An SHM based producer for video and audio compatible with GStreamer shm elements.
+parameters:
+  - identifier: argument
+    title: Control socket path
+    description: Path for the control socket. Default is /dev/shm/mlt.shm
+    type: string
+    required: no
+    readonly: no
+    widget: fileopen
+    default: /dev/shm/mlt.shm

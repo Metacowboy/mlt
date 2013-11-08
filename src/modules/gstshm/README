@@ -1,0 +1,37 @@
+GstSHM:
+
+This links two or more melt processes over shm using the same synchronization
+protocol of GStreamer to coordinate reads and writes.
+
+It is based on the posixshm module written by Tomas Neme but aims to make Melt
+and GStreamer play nice together. The depayloader for GStreamer will come soon.
+
+Basic usage:
+
+  Run:
+    melt -producer count -consumer gstshm
+
+  After that launch one or more of:
+    melt -producer gstshm -consumer sdl # or something else...
+
+The default control socket is located at /dev/shm/mlt.shm but can be changed
+to have many consumers/producers with different content as shown:
+
+    melt -consumer gstshm:/path/to/socket
+    melt -producer gstshm:/path/to/socket
+
+If the socket already exists when starting the consumer it is unlinked, old
+consumers and producers using it (if any) will keep running but the following
+will pick up audio and video from the new consumer.
+
+If there is no consumer providing data when starting the producer it will fail.
+However, if the consumer dies/quits/etc. the producer will wait for it to come
+back and reconnect when that happens. Melt still responds to signals but the
+keyboard commands are ignored until it reconnects. Patches are welcome.
+
+Known limitations:
+
+  - Using a consumer and producer on the same melt process doesn't work yet.
+    This fails: melt -producer gstshm:socket1.shm -consumer gstshm:socket2.shm
+
+  - Clutters the socket folder with temp files...
