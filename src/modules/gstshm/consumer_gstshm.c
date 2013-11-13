@@ -129,7 +129,8 @@ static int consumer_start( mlt_consumer this ) {
     mlt_properties_set_int(properties, "mlt_audio_format", afmt);
 
     // initialize shared memory
-    int memsize = sizeof(struct posixshm_control); // access semaphore
+    //int memsize = sizeof(struct posixshm_control); // access semaphore
+    int memsize = 0;
     memsize += sizeof(struct posix_shm_header);
     memsize += mlt_image_format_size(ifmt, width, height, NULL); // image size
     memsize += mlt_audio_format_size(afmt, samples, channels); // audio size
@@ -150,7 +151,7 @@ static int consumer_start( mlt_consumer this ) {
         g_unlink(target);
     }
     ShmPipe *shmpipe = NULL;
-    shmpipe = sp_writer_create(target, memsize, 0777);
+    shmpipe = sp_writer_create(target, 4*memsize, 0777);
     if (!shmpipe) {
       mlt_consumer_close(this);
       write_log(0, "Can't open control socket");
@@ -282,6 +283,8 @@ clock_gettime(CLOCK_REALTIME, &starttime);
     sp_writer_free_block(block);
   } else if (rv == -1) {
     write_log(1, "Invalid allocated buffer. The shmpipe library rejects our buffer, this is a bug");
+  } else {
+    write_log(1, "Sent frame: %li block: %p memsize: %li\ width: %i, height: %i , samples: %li\n", frameno, block, memsize, width, height, samples);
   }
 
 clock_gettime(CLOCK_REALTIME, &endtime);
@@ -308,6 +311,7 @@ static gboolean shm_client_read_cb(GIOChannel *source, GIOCondition condition, g
 
   ShmBlock *block = NULL;
   int rv = sp_writer_recv(shmpipe, client, (void **)&block);
+  write_log(1, "Client read rv: %i, block: %p\n", rv, block);
   if (rv == 0 && block) {
     sp_writer_free_block(block);
   }
