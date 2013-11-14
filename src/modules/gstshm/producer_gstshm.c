@@ -349,6 +349,7 @@ static void* producer_thread(void *arg) {
   mlt_properties properties = MLT_PRODUCER_PROPERTIES(this);
 
   ShmPipe *shmpipe = mlt_properties_get_data(properties, "_shmpipe", NULL);
+
   GMainLoop *loop = g_main_loop_new(NULL, FALSE);
 
   if (loop) {

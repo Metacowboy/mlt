@@ -151,7 +151,7 @@ static int consumer_start( mlt_consumer this ) {
         g_unlink(target);
     }
     ShmPipe *shmpipe = NULL;
-    shmpipe = sp_writer_create(target, 4*memsize, 0777);
+    shmpipe = sp_writer_create(target, 30*memsize, 0777);
     if (!shmpipe) {
       mlt_consumer_close(this);
       write_log(0, "Can't open control socket");
@@ -301,6 +301,7 @@ static void consumer_output( mlt_consumer this, int size, mlt_frame frame ) {
 
 
 alloc_error:
+  write_log(1, "ALLOC ERROR");
   return;
 }
 
@@ -437,18 +438,25 @@ static void *consumer_thread( void *arg ) {
   // Loop while running
   while( mlt_properties_get_int( properties, "running" ) ) {
     // Get the frame
+write_log(1, "before rt_frame\n");
     frame = mlt_consumer_rt_frame( this );
+write_log(1, "after rt_frame %p\n", frame);
 
     // Check that we have a frame to work with
     if ( frame != NULL ) {
       // Terminate on pause
       if ( top && mlt_properties_get_double( MLT_FRAME_PROPERTIES( frame ), "_speed" ) == 0 ) {
+write_log(1, "BREAK\n");
         mlt_frame_close( frame );
         break;
       }
+write_log(1, "before output\n");
       output( this, size, frame );
+write_log(1, "after output\n");
       mlt_events_fire( properties, "consumer-frame-show", frame, NULL );
+write_log(1, "after fire\n");
       mlt_frame_close(frame);
+write_log(1, "after close\n");
     }
 
     nanosec += frametime;
@@ -460,6 +468,7 @@ static void *consumer_thread( void *arg ) {
       g_main_context_iteration(context, FALSE);
     }
 
+write_log(1, "after iteration\n\n");
   }
 
   mlt_consumer_stopped( this );
