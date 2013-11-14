@@ -186,6 +186,10 @@ static void producer_read_frame_data(mlt_producer this, mlt_frame_ptr frame, cha
 
   mlt_profile profile = mlt_service_profile( MLT_PRODUCER_SERVICE(this) );
 
+#ifdef GSTSHM_DEBUG
+  mlt_properties_set_int(frame_props, "_master_idx", header->frame);
+#endif
+
   mlt_properties_set_int(frame_props, "mlt_image_format", ifmt);
   mlt_properties_set_int(frame_props, "width", width);
   mlt_properties_set_int(frame_props, "height", height);
@@ -388,6 +392,11 @@ static int producer_get_frame( mlt_producer producer, mlt_frame_ptr frame, int i
   // Get the frames properties
   mlt_properties properties = MLT_FRAME_PROPERTIES( *frame );
 
+#ifdef GSTSHM_DEBUG
+  int idx = mlt_properties_get_int( properties, "_master_idx");
+  write_log(1, "Playing frame: %i\n", idx);
+#endif
+
   mlt_properties_set_int( properties, "test_image", 0 );
   mlt_properties_set_int( properties, "test_audio", 0 );
 
@@ -409,7 +418,9 @@ static int producer_get_frame( mlt_producer producer, mlt_frame_ptr frame, int i
   mlt_producer_prepare_next( producer );
   pthread_cond_broadcast(cond);
   pthread_mutex_unlock(mutex);
+#ifdef GSTSHM_DEBUG
   write_log(1, "Signal consumption          %li\n", pthread_self());
+#endif
   return 0;
 }
 
