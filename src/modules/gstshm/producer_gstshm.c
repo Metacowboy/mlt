@@ -88,6 +88,7 @@ mlt_producer producer_posixshm_init( mlt_profile profile, mlt_service_type type,
     else
       mlt_properties_set(properties, "resource", "/dev/shm/mlt.shm");
 
+
     // open shared memory
     ShmPipe *shmpipe = NULL;
     shmpipe = create_shm_pipe(this, FALSE);
@@ -109,15 +110,6 @@ mlt_producer producer_posixshm_init( mlt_profile profile, mlt_service_type type,
     // buffer
     mlt_deque queue = mlt_deque_init();
     mlt_properties_set_data(properties, "_queue", queue, sizeof(mlt_deque), (mlt_destructor)mlt_deque_close, NULL);
-    mlt_properties_set_int(properties, "_buffer", 25);
-    mlt_properties_set_int(properties, "_buffering", 1);
-
-    // Cache
-    mlt_cache m_cache;
-    m_cache = mlt_cache_init();
-    // 3 covers YADIF and increasing framerate use cases
-    mlt_cache_set_size( m_cache, 5 );
-    mlt_properties_set_data(properties, "_cache", m_cache, 0, NULL, NULL);
 
     // Read frame thread setup and creation
     pthread_t *thread = malloc(sizeof(pthread_t));
@@ -162,7 +154,11 @@ static void producer_read_frame_data(mlt_producer this, mlt_frame_ptr frame, cha
   struct posix_shm_header *header = (void *)readspace;
   void *data = readspace + sizeof(struct posix_shm_header);
 
-  mlt_properties_set_int(frame_props, "_consecutive", header->frame == (last_frame + 1));
+  if (last_frame == -1) {
+    mlt_properties_set_int(frame_props, "_consecutive", 1);
+  } else {
+    mlt_properties_set_int(frame_props, "_consecutive", header->frame == (last_frame + 1));
+  }
   mlt_properties_set_int(properties, "_last_frame", header->frame);
 
   int frame_rate_num = header->frame_rate_num;
