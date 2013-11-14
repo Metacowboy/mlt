@@ -370,67 +370,20 @@ static int producer_get_frame( mlt_producer producer, mlt_frame_ptr frame, int i
 {
   mlt_properties prod_props = MLT_PRODUCER_PROPERTIES(producer);
 
-  mlt_cache m_cache = mlt_properties_get_data(prod_props, "_cache", NULL);
   mlt_deque queue = mlt_properties_get_data(prod_props, "_queue", NULL);
   pthread_mutex_t *mutex = mlt_properties_get_data(prod_props, "_queue_mutex", NULL);
   pthread_cond_t *cond = mlt_properties_get_data(prod_props, "_queue_cond", NULL);
-  int buffering = mlt_properties_get_int(prod_props, "_buffering");
-
-  // int frn = mlt_properties_get_int(prod_props, "meta.media.frame_rate_num");
-  // int frd = mlt_properties_get_int(prod_props, "meta.media.frame_rate_den");
-
-  if(buffering) {
-    mlt_properties_set_int(prod_props, "_buffering", 0);
-    int buffer = mlt_properties_get_int(prod_props, "_buffer");
-    pthread_mutex_lock(mutex);
-    write_log(0, "Buffering...");
-    while(mlt_deque_count(queue) < buffer) {
-      pthread_cond_wait(cond, mutex);
-    }
-    pthread_mutex_unlock(mutex);
-    write_log(0, "Buffering DONE.");
-  }
 
   // Try to get frame from cache
   mlt_position position = mlt_producer_position( producer );
-  *frame = mlt_cache_get_frame( m_cache, position );
 
-  if (!*frame) {
-    //XXX write_log(0, "Cache miss: %d", position);
-
-    // Get frame from queue
-    pthread_mutex_lock(mutex);
-    while(mlt_deque_count(queue) < 1) {
-      // XXX write_log(0, "Waiting buffer!");
-      pthread_cond_wait(cond, mutex);
-      // XXX write_log(0, "Buffer filled!");
-    }
-
-    // XXX write_log(0, "Get frame from queue! position: %i\n", position);
-    *frame = (mlt_frame)mlt_deque_pop_front(queue);
-    // XXX write_log(0, "About to broadcast cond.\n");
-    pthread_cond_broadcast(cond);
-    // XXX write_log(0, "After broadcast cond.\n");
-    // XXX write_log(0, "Queue count: %d", mlt_deque_count(queue));
-    pthread_mutex_unlock(mutex);
-    // XXX write_log(0, "After mutex unlock. Frame: %#llx\n");
-
-    /*
-    // Generate new frame
-    printf("\nGenerate new frame!");
-    *frame = mlt_frame_init(MLT_PRODUCER_SERVICE(producer));
-    producer_read_frame_data(producer, *frame);
-    */
-
-    // Add frame to cache
-    if ( *frame )
-    {
-      mlt_frame_set_position( *frame, position );
-      mlt_cache_put_frame( m_cache, *frame );
-    }
-  } else {
-    // XXX write_log(0, "Cache hit: %d", position);
+  pthread_mutex_lock(mutex);
+  while(mlt_deque_count(queue) < 1) {
+    pthread_cond_wait(cond, mutex);
   }
+  *frame = (mlt_frame)mlt_deque_pop_front(queue);
+
+  mlt_frame_set_position( *frame, position );
 
   // Get the frames properties
   mlt_properties properties = MLT_FRAME_PROPERTIES( *frame );
@@ -451,14 +404,12 @@ static int producer_get_frame( mlt_producer producer, mlt_frame_ptr frame, int i
 
   // Push the get_audio method onto the stack
   mlt_frame_push_audio(*frame, mlt_frame_get_audio);
-  // XXX write_log(0, "After push_get_audio()\n");
-  // Update timecode on the frame we're creating
-  mlt_frame_set_position( *frame, mlt_producer_position( producer ) );
-  // XXX write_log(0, "After push_set_position()\n");
 
   // Calculate the next timecode
   mlt_producer_prepare_next( producer );
-  // XXX write_log(0, "After prepare_next()\n");
+  pthread_cond_broadcast(cond);
+  pthread_mutex_unlock(mutex);
+  write_log(1, "Signal consumption          %li\n", pthread_self());
   return 0;
 }
 
