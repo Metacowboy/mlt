@@ -214,10 +214,12 @@ static int consumer_is_stopped( mlt_consumer this ) {
  */
 
 static void consumer_output( mlt_consumer this, int size, mlt_frame frame ) {
+#ifdef GSTSHM_DEBUG_TIME
   struct timespec starttime;
   struct timespec endtime;
   float  tdelta;
-clock_gettime(CLOCK_REALTIME, &starttime);
+  clock_gettime(CLOCK_REALTIME, &starttime);
+#endif
 
   // Get the properties
   mlt_properties properties = MLT_CONSUMER_PROPERTIES( this );
@@ -284,14 +286,18 @@ clock_gettime(CLOCK_REALTIME, &starttime);
   } else if (rv == -1) {
     write_log(1, "Invalid allocated buffer. The shmpipe library rejects our buffer, this is a bug");
   } else {
-    write_log(1, "Sent frame: %li block: %p memsize: %li\ width: %i, height: %i , samples: %li\n", frameno, block, memsize, width, height, samples);
+#ifdef GSTSHM
+    write_log(1, "sent frame: %li block: %p memsize: %li width: %i, height: %i , samples: %li\n", frameno, block, memsize, width, height, samples);
+#endif
   }
 
-clock_gettime(CLOCK_REALTIME, &endtime);
-tdelta = ((float)(endtime.tv_nsec - starttime.tv_nsec)) / 1000000.0f + 1000*(endtime.tv_sec - starttime.tv_sec);
+#ifdef GSTSHM_DEBUG_TIME
+    clock_gettime(CLOCK_REALTIME, &endtime);
+    tdelta = ((float)(endtime.tv_nsec - starttime.tv_nsec)) / 1000000.0f + 1000*(endtime.tv_sec - starttime.tv_sec);
 
-if (tdelta > 4.0)
-  write_log(1, "send_buf(): loop time: %f frame no:%i\n", tdelta, frameno);
+    if (tdelta > 4.0)
+      write_log(1, "send_buf(): loop time: %f frame no:%i\n", tdelta, frameno);
+#endif
 
 
 alloc_error:
@@ -311,7 +317,9 @@ static gboolean shm_client_read_cb(GIOChannel *source, GIOCondition condition, g
 
   ShmBlock *block = NULL;
   int rv = sp_writer_recv(shmpipe, client, (void **)&block);
+#ifdef GSTSHM_DEBUG
   write_log(1, "Client read rv: %i, block: %p\n", rv, block);
+#endif
   if (rv == 0 && block) {
     sp_writer_free_block(block);
   }
@@ -377,7 +385,6 @@ static gboolean shm_error_cb(GIOChannel *source, GIOCondition condition, gpointe
   ShmPipe *shmpipe = mlt_properties_get_data(properties, "_shmpipe", NULL);
   mlt_properties_set_data(properties, "_shmpipe", NULL, 0, NULL, NULL);
 
-  //XXX FIXME: this can potentially leak blocks, need to implement the sp_buffer_free_callback later.
   sp_writer_close(shmpipe, NULL, NULL);
 
   return TRUE;
@@ -406,9 +413,10 @@ static void *consumer_thread( void *arg ) {
   int size = 0;
   int fr_den = mlt_properties_get_int(properties, "frame_rate_den");
   int fr_num = mlt_properties_get_int(properties, "frame_rate_num");
-  struct timespec sleeptime;
 
+  struct timespec sleeptime;
   struct timespec starttime;
+
   clock_gettime(CLOCK_REALTIME, &starttime);
   uint64_t nanosec = starttime.tv_sec;
   nanosec *= 1000000000;
@@ -438,13 +446,11 @@ static void *consumer_thread( void *arg ) {
         mlt_frame_close( frame );
         break;
       }
-    //clock_gettime(CLOCK_REALTIME, &starttime);
       output( this, size, frame );
-    //clock_gettime(CLOCK_REALTIME, &endtime);
-    //write_log(1, "Consumer output loop time: %f", ((float)(endtime.tv_nsec - starttime.tv_nsec)) / 1000000.0f + 1000*(endtime.tv_sec - starttime.tv_sec));
       mlt_events_fire( properties, "consumer-frame-show", frame, NULL );
       mlt_frame_close(frame);
     }
+
     nanosec += frametime;
     sleeptime.tv_sec = nanosec / 1000000000;
     sleeptime.tv_nsec = nanosec % 1000000000;
@@ -453,6 +459,7 @@ static void *consumer_thread( void *arg ) {
     while(g_main_context_pending(context)) {
       g_main_context_iteration(context, FALSE);
     }
+
   }
 
   mlt_consumer_stopped( this );
