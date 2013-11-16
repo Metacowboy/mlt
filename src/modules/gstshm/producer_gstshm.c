@@ -332,6 +332,9 @@ static gboolean pipe_callback(GIOChannel *source, GIOCondition condition, gpoint
       write_log(1, "Wait buffer consumption!");
       pthread_cond_wait(cond, mutex);
       write_log(1, "Buffer consumption started!");
+      while (mlt_deque_count(queue) >= 12) {
+        pthread_cond_wait(cond, mutex);
+      }
     }
 
     mlt_frame frame = mlt_frame_init(MLT_PRODUCER_SERVICE(this));
