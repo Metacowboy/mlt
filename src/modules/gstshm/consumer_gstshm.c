@@ -51,7 +51,6 @@ static gboolean shm_client_error_cb(GIOChannel *source, GIOCondition condition, 
 static gboolean shm_read_cb(GIOChannel *source, GIOCondition condition, gpointer data);
 static gboolean shm_error_cb(GIOChannel *source, GIOCondition condition, gpointer data);
 
-
 /** Initialise the posixshm consumer.
  */
 
@@ -154,6 +153,7 @@ static int consumer_start( mlt_consumer this ) {
         write_log(0, "Control socket at %s already exists, unlinking.\n", target);
         g_unlink(target);
     }
+
     ShmPipe *shmpipe = NULL;
     shmpipe = sp_writer_create(target, 30*memsize, 0777);
     if (!shmpipe) {
@@ -241,6 +241,7 @@ static void consumer_output( mlt_consumer this, int size, mlt_frame frame ) {
 
   size_t memsize = mlt_properties_get_int(properties, "_shareSize");
   ShmPipe  *shmpipe = mlt_properties_get_data(properties, "_shmpipe", NULL);
+
   ShmBlock *block = sp_writer_alloc_block(shmpipe, memsize);
   if (!block) {
     goto alloc_error;
@@ -280,7 +281,6 @@ static void consumer_output( mlt_consumer this, int size, mlt_frame frame ) {
   header->samples = samples;
 
   memcpy(walk, audio, audio_size);
-
 
   int rv = sp_writer_send_buf(shmpipe, share, memsize, block);
 
