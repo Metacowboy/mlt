@@ -133,11 +133,11 @@ static int consumer_start( mlt_consumer this ) {
     mlt_properties_set_int(properties, "mlt_audio_format", afmt);
 
     // initialize shared memory
-    //int memsize = sizeof(struct posixshm_control); // access semaphore
     int memsize = 0;
     memsize += sizeof(struct posix_shm_header);
     memsize += mlt_image_format_size(ifmt, width, height, NULL); // image size
     memsize += mlt_audio_format_size(afmt, samples, channels); // audio size
+    memsize += 32;
 
 
     // all the shared memory space
