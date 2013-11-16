@@ -5,6 +5,8 @@
 #include <framework/mlt.h>
 #include "shmpipe.h"
 
+int _gstshm_push;
+
 struct posixshm_control {
   uint32_t size;
   pthread_rwlock_t rwlock;

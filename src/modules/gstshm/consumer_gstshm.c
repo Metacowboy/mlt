@@ -481,13 +481,14 @@ static void *consumer_thread( void *arg ) {
       mlt_frame_close(frame);
     }
 
-    nanosec += frametime;
-    sleeptime.tv_sec = nanosec / 1000000000;
-    sleeptime.tv_nsec = nanosec % 1000000000;
-    clock_nanosleep(CLOCK_REALTIME, TIMER_ABSTIME, &sleeptime, NULL);
-
-    while(g_main_context_pending(context)) {
-      g_main_context_iteration(context, FALSE);
+    if (!_gstshm_push) {
+      nanosec += frametime;
+      sleeptime.tv_sec = nanosec / 1000000000;
+      sleeptime.tv_nsec = nanosec % 1000000000;
+      clock_nanosleep(CLOCK_REALTIME, TIMER_ABSTIME, &sleeptime, NULL);
+      while(g_main_context_pending(context)) {
+        g_main_context_iteration(context, FALSE);
+      }
     }
   }
 

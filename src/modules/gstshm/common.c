@@ -9,6 +9,8 @@
 #define ANSI_COLOR_RESET   "\x1b[0m"
 #define DEBUG 1
 
+int _gstshm_push = 0;
+
 int write_log(int thread, const char *format, ...)
 {
 

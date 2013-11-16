@@ -140,6 +140,7 @@ mlt_producer producer_posixshm_init( mlt_profile profile, mlt_service_type type,
 
     // Return the producer
     write_log(0, "GstSHM init ok. Thread id: %li", pthread_self());
+    _gstshm_push = 1;
     return this;
   }
 
