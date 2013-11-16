@@ -28,5 +28,6 @@ struct posix_shm_header {
 };
 
 int write_log(int priority, const char *format, ...);
+void log_header(struct posix_shm_header *header);
 
 #endif

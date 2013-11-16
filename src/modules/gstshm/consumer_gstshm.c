@@ -290,7 +290,8 @@ static void consumer_output( mlt_consumer this, int size, mlt_frame frame ) {
   } else if (rv == -1) {
     write_log(1, "Invalid allocated buffer. The shmpipe library rejects our buffer, this is a bug");
   } else {
-#ifdef GSTSHM
+#ifdef GSTSHM_DEBUG
+    log_header(header);
     write_log(1, "sent frame: %li block: %p memsize: %li width: %i, height: %i , samples: %li\n", frameno, block, memsize, width, height, samples);
 #endif
   }
@@ -305,7 +306,7 @@ static void consumer_output( mlt_consumer this, int size, mlt_frame frame ) {
 
 
 alloc_error:
-  write_log(1, "ALLOC ERROR");
+  //write_log(1, "ALLOC ERROR\n");
   return;
 }
 
@@ -462,29 +463,22 @@ static void *consumer_thread( void *arg ) {
   // Loop while running
   while( mlt_properties_get_int( properties, "running" ) ) {
     // Get the frame
-write_log(1, "before rt_frame\n");
     frame = mlt_consumer_rt_frame( this );
-write_log(1, "after rt_frame %p\n", frame);
 
     // Check that we have a frame to work with
     if ( frame != NULL ) {
       // Terminate on pause
       if ( top && mlt_properties_get_double( MLT_FRAME_PROPERTIES( frame ), "_speed" ) == 0 ) {
-write_log(1, "BREAK\n");
         mlt_frame_close( frame );
         break;
       }
-write_log(1, "before output\n");
 
       pthread_mutex_lock(mutex);
       output( this, size, frame );
-write_log(1, "after output\n");
       pthread_mutex_unlock(mutex);
 
       mlt_events_fire( properties, "consumer-frame-show", frame, NULL );
-write_log(1, "after fire\n");
       mlt_frame_close(frame);
-write_log(1, "after close\n");
     }
 
     nanosec += frametime;
@@ -495,8 +489,6 @@ write_log(1, "after close\n");
     while(g_main_context_pending(context)) {
       g_main_context_iteration(context, FALSE);
     }
-
-write_log(1, "after iteration\n\n");
   }
 
   mlt_consumer_stopped( this );

@@ -29,3 +29,8 @@ int write_log(int thread, const char *format, ...)
 
   return 0;
 }
+
+void log_header(struct posix_shm_header *header)
+{
+    write_log(1, "header at %p frame: %li width: %i, height: %i , samples: %li image_size: %i audio_size: %i \n", header, header->frame, header->width, header->height, header->samples, header->image_size, header->audio_size);
+}

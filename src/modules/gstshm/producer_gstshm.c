@@ -158,6 +158,10 @@ static void producer_read_frame_data(mlt_producer this, mlt_frame_ptr frame, cha
   struct posix_shm_header *header = (void *)readspace;
   void *data = readspace + sizeof(struct posix_shm_header);
 
+#ifdef GSTSHM_DEBUG
+  log_header(header);
+#endif
+
   if (last_frame == -1) {
     mlt_properties_set_int(frame_props, "_consecutive", 1);
   } else {
@@ -316,6 +320,9 @@ static gboolean pipe_callback(GIOChannel *source, GIOCondition condition, gpoint
     goto end;
   }
 
+#ifdef GSTSHM_DEBUG
+  write_log(1, "Got   buffer %p of size %i thread is %li\n", buffer , size, pthread_self());
+#endif
   if (mlt_properties_get_int(properties, "_running")) {
 
     // Sleep until buffer consumption begins
@@ -345,6 +352,9 @@ static gboolean pipe_callback(GIOChannel *source, GIOCondition condition, gpoint
 
   if (buffer) {
     sp_client_recv_finish(shmpipe, buffer);
+#ifdef GSTSHM_DEBUG
+    write_log(1, "Acked buffer %p thread is %li\n", buffer , pthread_self());
+#endif
   }
 
 end:
