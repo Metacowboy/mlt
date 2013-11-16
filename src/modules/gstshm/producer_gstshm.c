@@ -107,6 +107,10 @@ mlt_producer producer_posixshm_init( mlt_profile profile, mlt_service_type type,
     pthread_cond_init(cond, NULL);
     mlt_properties_set_data(properties, "_queue_cond", cond, sizeof(pthread_cond_t), free, NULL);
 
+    pthread_mutex_t *shmmutex = malloc(sizeof(pthread_mutex_t));
+    pthread_mutex_init(shmmutex, NULL);
+    mlt_properties_set_data(properties, "_shm_mutex", shmmutex, sizeof(pthread_mutex_t), free, NULL);
+
     // buffer
     mlt_deque queue = mlt_deque_init();
     mlt_properties_set_data(properties, "_queue", queue, sizeof(mlt_deque), (mlt_destructor)mlt_deque_close, NULL);
@@ -276,9 +280,11 @@ void try_reconnect(mlt_producer this)
 
 static gboolean pipe_callback(GIOChannel *source, GIOCondition condition, gpointer data)
 {
+  gboolean ret = TRUE;
   mlt_producer this = (mlt_producer)data;
   mlt_properties properties = MLT_PRODUCER_PROPERTIES(this);
   pthread_mutex_t *mutex = mlt_properties_get_data(properties, "_queue_mutex", NULL);
+  pthread_mutex_t *shmmutex = mlt_properties_get_data(properties, "_shm_mutex", NULL);
   pthread_cond_t  *cond  = mlt_properties_get_data(properties, "_queue_cond", NULL);
   mlt_deque queue = mlt_properties_get_data(properties, "_queue", NULL);
 
@@ -288,21 +294,26 @@ static gboolean pipe_callback(GIOChannel *source, GIOCondition condition, gpoint
     return FALSE;
   }
 
+  pthread_mutex_lock(shmmutex);
+
   char *buffer = NULL;
   long int size = sp_client_recv(shmpipe, &buffer);
   if (size == 0) {
     // control message, handled internally.
-    return TRUE;
+    ret = TRUE;
+    goto end;
   } else if (size == -1) {
     if (buffer) {
       sp_client_recv_finish(shmpipe, buffer);
     }
     try_reconnect(this);
-    return TRUE;
+    ret = TRUE;
+    goto end;
   }
 
   if (!buffer) {
-    return TRUE;
+    ret = TRUE;
+    goto end;
   }
 
   if (mlt_properties_get_int(properties, "_running")) {
@@ -335,7 +346,10 @@ static gboolean pipe_callback(GIOChannel *source, GIOCondition condition, gpoint
   if (buffer) {
     sp_client_recv_finish(shmpipe, buffer);
   }
-  return TRUE;
+
+end:
+  pthread_mutex_unlock(shmmutex);
+  return ret;
 
 }
 

@@ -76,6 +76,10 @@ mlt_consumer consumer_posixshm_init( mlt_profile profile, mlt_service_type type,
 
     mlt_properties_set_data(properties, "_shmpipe", NULL, 0, NULL, NULL);
 
+    pthread_mutex_t *mutex = malloc(sizeof(pthread_mutex_t));
+    pthread_mutex_init(mutex, NULL);
+    mlt_properties_set_data(properties, "_shm_mutex", mutex, sizeof(pthread_mutex_t), free, NULL);
+
     // Set the output handling method
     mlt_properties_set_data( properties, "output", consumer_output, 0, NULL, NULL );
 
@@ -310,8 +314,11 @@ static gboolean shm_client_read_cb(GIOChannel *source, GIOCondition condition, g
   mlt_producer this = (mlt_producer)data;
   mlt_properties properties = MLT_PRODUCER_PROPERTIES(this);
 
+  pthread_mutex_t *mutex = mlt_properties_get_data(properties, "_shm_mutex", NULL);
   ShmPipe    *shmpipe    = mlt_properties_get_data(properties, "_shmpipe", NULL);
   GHashTable *fdtoclient = mlt_properties_get_data(properties, "_fdtoclient", NULL);
+
+  pthread_mutex_lock(mutex);
 
   int fd = g_io_channel_unix_get_fd(source);
   ShmClient  *client = g_hash_table_lookup(fdtoclient, GINT_TO_POINTER(fd));
@@ -324,6 +331,9 @@ static gboolean shm_client_read_cb(GIOChannel *source, GIOCondition condition, g
   if (rv == 0 && block) {
     sp_writer_free_block(block);
   }
+
+  pthread_mutex_unlock(mutex);
+
   return TRUE;
 }
 
@@ -340,13 +350,17 @@ static gboolean shm_client_error_cb(GIOChannel *source, GIOCondition condition, 
   mlt_properties properties = MLT_PRODUCER_PROPERTIES(this);
 
   ShmPipe    *shmpipe    = mlt_properties_get_data(properties, "_shmpipe", NULL);
+  pthread_mutex_t *mutex = mlt_properties_get_data(properties, "_shm_mutex", NULL);
   GHashTable *fdtoclient = mlt_properties_get_data(properties, "_fdtoclient", NULL);
   GHashTable *fdtowatch  = mlt_properties_get_data(properties, "_fdtowatch", NULL);
 
   int fd = g_io_channel_unix_get_fd(source);
   ShmClient  *client = g_hash_table_lookup(fdtoclient, GINT_TO_POINTER(fd));
 
+  pthread_mutex_lock(mutex);
   sp_writer_close_client(shmpipe, client, buffer_free_callback, NULL);
+  pthread_mutex_unlock(mutex);
+
   g_hash_table_remove(fdtoclient, GINT_TO_POINTER(fd));
 
   guint id = GPOINTER_TO_UINT(g_hash_table_lookup(fdtowatch, GINT_TO_POINTER(fd)));
@@ -361,9 +375,11 @@ static gboolean shm_read_cb(GIOChannel *source, GIOCondition condition, gpointer
   mlt_properties properties = MLT_PRODUCER_PROPERTIES(this);
 
   ShmPipe *shmpipe = mlt_properties_get_data(properties, "_shmpipe", NULL);
+  pthread_mutex_t *mutex = mlt_properties_get_data(properties, "_shm_mutex", NULL);
   GHashTable *fdtoclient = mlt_properties_get_data(properties, "_fdtoclient", NULL);
   GHashTable *fdtowatch  = mlt_properties_get_data(properties, "_fdtowatch", NULL);
 
+  pthread_mutex_lock(mutex);
   ShmClient *client = sp_writer_accept_client(shmpipe);
 
   int fd = sp_writer_get_client_fd(client);
@@ -373,6 +389,8 @@ static gboolean shm_read_cb(GIOChannel *source, GIOCondition condition, gpointer
   guint id = g_io_add_watch(iochannel, G_IO_IN, shm_client_read_cb, this);
   g_hash_table_insert(fdtowatch, GINT_TO_POINTER(fd), GUINT_TO_POINTER(id));
   g_io_add_watch(iochannel, G_IO_ERR | G_IO_HUP | G_IO_NVAL, shm_client_error_cb, this);
+
+  pthread_mutex_unlock(mutex);
 
   write_log(1, "New client, fd: %i", fd);
   return TRUE;
@@ -384,9 +402,13 @@ static gboolean shm_error_cb(GIOChannel *source, GIOCondition condition, gpointe
   mlt_properties properties = MLT_PRODUCER_PROPERTIES(this);
 
   ShmPipe *shmpipe = mlt_properties_get_data(properties, "_shmpipe", NULL);
+  pthread_mutex_t *mutex = mlt_properties_get_data(properties, "_shm_mutex", NULL);
+
+  pthread_mutex_lock(mutex);
   mlt_properties_set_data(properties, "_shmpipe", NULL, 0, NULL, NULL);
 
   sp_writer_close(shmpipe, NULL, NULL);
+  pthread_mutex_unlock(mutex);
 
   return TRUE;
 }
@@ -403,6 +425,8 @@ static void *consumer_thread( void *arg ) {
 
   // Get the terminate_on_pause property
   int top = mlt_properties_get_int( properties, "terminate_on_pause" );
+  pthread_mutex_t *mutex = mlt_properties_get_data(properties, "_shm_mutex", NULL);
+
 
   // Get the handling methods
   int ( *output )( mlt_consumer, int, mlt_frame ) = mlt_properties_get_data( properties, "output", NULL );
@@ -451,8 +475,12 @@ write_log(1, "BREAK\n");
         break;
       }
 write_log(1, "before output\n");
+
+      pthread_mutex_lock(mutex);
       output( this, size, frame );
 write_log(1, "after output\n");
+      pthread_mutex_unlock(mutex);
+
       mlt_events_fire( properties, "consumer-frame-show", frame, NULL );
 write_log(1, "after fire\n");
       mlt_frame_close(frame);
