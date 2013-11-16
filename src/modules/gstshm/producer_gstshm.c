@@ -414,6 +414,8 @@ static int producer_get_frame( mlt_producer producer, mlt_frame_ptr frame, int i
     pthread_cond_wait(cond, mutex);
   }
   *frame = (mlt_frame)mlt_deque_pop_front(queue);
+  pthread_cond_broadcast(cond);
+  pthread_mutex_unlock(mutex);
 
   mlt_frame_set_position( *frame, position );
 
@@ -444,8 +446,6 @@ static int producer_get_frame( mlt_producer producer, mlt_frame_ptr frame, int i
 
   // Calculate the next timecode
   mlt_producer_prepare_next( producer );
-  pthread_cond_broadcast(cond);
-  pthread_mutex_unlock(mutex);
 #ifdef GSTSHM_DEBUG
   write_log(1, "Signal consumption          %li\n", pthread_self());
 #endif
