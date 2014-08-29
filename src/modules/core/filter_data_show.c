@@ -222,6 +222,19 @@ static int process_feed( mlt_properties feed, mlt_filter filter, mlt_frame frame
 									s[sizeof( s ) - 1] = '\0';
 									strcat( result, s );
 								}
+                                                                else if ( !strcmp( keywords, "now" ) )
+                                                                {
+                                                                        time_t now;
+                                                                        struct tm *t;
+                                                                        char s[] = "xx:xx ";
+
+                                                                        time (&now);
+                                                                        t = localtime(&now);
+
+                                                                        snprintf( s, sizeof(s), "%02d:%02d", t->tm_hour, t->tm_min);
+									s[sizeof( s )] = '\0';
+									strcat( result, s );
+                                                                }
 								else
 								{
 									// replace keyword with metadata value

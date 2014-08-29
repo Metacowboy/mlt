@@ -152,6 +152,20 @@ static void get_resource_str( mlt_filter filter, mlt_frame frame, char* text )
 	strncat( text, mlt_properties_get( producer_properties, "resource" ), MAX_TEXT_LEN - strlen( text ) - 1 );
 }
 
+static void get_time_str( mlt_filter filter, mlt_frame frame, char* text )
+{
+	time_t now;
+        struct tm *t;
+        char s[] = "xx:xx ";
+
+        time (&now);
+        t = localtime(&now);
+
+        snprintf( s, sizeof(s), "%02d:%02d", t->tm_hour, t->tm_min, t->tm_sec);
+        s[sizeof(s) - 1] = '\0';
+        strncat( text, s, MAX_TEXT_LEN - strlen( text ));
+}
+
 /** Perform substitution for keywords that are enclosed in "# #".
 */
 static void substitute_keywords(mlt_filter filter, char* result, char* value, mlt_frame frame)
@@ -186,6 +200,10 @@ static void substitute_keywords(mlt_filter filter, char* result, char* value, ml
 		{
 			get_resource_str( filter, frame, result );
 		}
+                else if ( !strcmp( keyword, "time" ) )
+		{
+			get_time_str( filter, frame, result );
+		}
 		else
 		{
 			// replace keyword with property value from this frame
@@ -204,7 +222,9 @@ static void setup_producer( mlt_filter filter, mlt_producer producer, mlt_frame 
 	mlt_properties my_properties = MLT_FILTER_PROPERTIES( filter );
 	mlt_properties producer_properties = MLT_PRODUCER_PROPERTIES( producer );
 	char* dynamic_text = mlt_properties_get( my_properties, "argument" );
+	char* read_file    = mlt_properties_get( my_properties, "read_file" );
 
+        char result[MAX_TEXT_LEN] = "";
 	// Check for keywords in dynamic text
 	if ( dynamic_text )
 	{
@@ -213,6 +233,19 @@ static void setup_producer( mlt_filter filter, mlt_producer producer, mlt_frame 
 		substitute_keywords( filter, result, dynamic_text, frame );
 		mlt_properties_set( producer_properties, "text", (char*)result );
 	}
+        if ( read_file )
+        {
+                FILE *f = fopen(read_file, "r");
+                if (f) {
+                	char result[4096];
+
+                        size_t r = fread(result, 1, sizeof(result), f);
+                        result[r - 1] = '\0';
+                        if (r > 1)
+                        	mlt_properties_set( watermark_properties, "producer.markup", (char*) result );
+                        fclose(f);
+                }
+        }
 
 	// Pass the properties to the pango producer
 	mlt_properties_set( producer_properties, "family", mlt_properties_get( my_properties, "family" ) );
